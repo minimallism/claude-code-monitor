@@ -917,33 +917,34 @@ export function Dashboard() {
   const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
-  // Dynamic item counts based on available container height
-  const agentsContainerRef = useRef<HTMLDivElement>(null);
-  const activityContainerRef = useRef<HTMLDivElement>(null);
-  const [visibleAgentCount, setVisibleAgentCount] = useState(5);
-  const [visibleActivityCount, setVisibleActivityCount] = useState(8);
+  // ResizeObserver — fill available container height per screen size
+  const agentsRef = useRef<HTMLDivElement>(null);
+  const activityRef = useRef<HTMLDivElement>(null);
+  const [visibleAgentCount, setVisibleAgentCount] = useState(6);
+  const [visibleActivityCount, setVisibleActivityCount] = useState(12);
 
   useEffect(() => {
-    const AGENT_ROW_H = 56; // ~px per agent card row
-    const ACTIVITY_ROW_H = 44; // ~px per activity row
-    const HEADER_H = 40; // section header height
+    const HEADER_H = 32;
+    const AGENT_H = 48;
+    const ACTIVITY_H = 38;
 
     function recalc() {
-      if (agentsContainerRef.current) {
-        const h = agentsContainerRef.current.clientHeight;
-        setVisibleAgentCount(Math.max(3, Math.floor((h - HEADER_H) / AGENT_ROW_H)));
+      if (agentsRef.current) {
+        setVisibleAgentCount(
+          Math.max(3, Math.floor((agentsRef.current.clientHeight - HEADER_H) / AGENT_H))
+        );
       }
-      if (activityContainerRef.current) {
-        const h = activityContainerRef.current.clientHeight;
-        setVisibleActivityCount(Math.max(3, Math.floor((h - HEADER_H) / ACTIVITY_ROW_H)));
+      if (activityRef.current) {
+        setVisibleActivityCount(
+          Math.max(3, Math.floor((activityRef.current.clientHeight - HEADER_H) / ACTIVITY_H))
+        );
       }
     }
 
     const ro = new ResizeObserver(recalc);
-    if (agentsContainerRef.current) ro.observe(agentsContainerRef.current);
-    if (activityContainerRef.current) ro.observe(activityContainerRef.current);
+    if (agentsRef.current) ro.observe(agentsRef.current);
+    if (activityRef.current) ro.observe(activityRef.current);
     recalc();
-
     return () => ro.disconnect();
   }, [activeTab]);
 
@@ -954,7 +955,7 @@ export function Dashboard() {
           api.stats.get(),
           api.agents.list({ status: "working", limit: 20 }),
           api.agents.list({ status: "waiting", limit: 20 }),
-          api.events.list({ limit: 30 }),
+          api.events.list({ limit: 50 }),
           api.pricing.totalCost(),
           api.sessions.list({ status: "active", limit: 100 }),
         ]
@@ -1092,8 +1093,8 @@ export function Dashboard() {
   }
 
   return (
-    <div className="flex flex-col gap-8 animate-fade-in min-h-[calc(100vh-4rem)]">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="flex flex-col gap-3 animate-fade-in h-[calc(100vh-4rem)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-accent/15 flex items-center justify-center">
             <LayoutDashboard className="w-4.5 h-4.5 text-accent" />
@@ -1147,9 +1148,8 @@ export function Dashboard() {
       </div>
 
       {activeTab === "monitor" ? (
-        <div className="flex-1 flex flex-col gap-8 min-h-0">
-          {/* Stats grid - 2 rows of 3 avoids the 6-column squeeze */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="flex-1 flex flex-col gap-3 min-h-0 overflow-hidden">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 shrink-0">
             <StatCard
               label={t("totalSessions")}
               value={stats ? fmt(stats.total_sessions) : ""}
@@ -1205,7 +1205,7 @@ export function Dashboard() {
 
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-0 min-w-0 flex-1 min-h-0">
             {/* Active agents */}
-            <div ref={agentsContainerRef} className="min-w-0 overflow-y-auto pr-6">
+            <div ref={agentsRef} className="min-w-0 overflow-y-auto pr-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-gray-300">{t("activeAgentsSection")}</h3>
                 <button onClick={() => navigate("/kanban")} className="btn-ghost text-xs">
@@ -1371,7 +1371,7 @@ export function Dashboard() {
             <div className="hidden lg:block w-px bg-border self-stretch" />
 
             {/* Recent activity */}
-            <div ref={activityContainerRef} className="min-w-0 overflow-y-auto pl-6">
+            <div ref={activityRef} className="min-w-0 overflow-y-auto pl-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-gray-300">{t("recentActivity")}</h3>
                 <button onClick={() => navigate("/activity")} className="btn-ghost text-xs">
@@ -1443,7 +1443,9 @@ export function Dashboard() {
           </div>
         </div>
       ) : (
-        <SystemHealthTab />
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <SystemHealthTab />
+        </div>
       )}
     </div>
   );
