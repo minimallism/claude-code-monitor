@@ -54,14 +54,10 @@
   "switchLanguage": "切换为{{language}}",
   "languageNames": {
     "en": "英文",
-    "zh": "中文",
-    "vi": "越南语",
-    "ko": "韩语"
+    "zh": "中文"
   },
   "languageShort": {
     "en": "EN",
-    "zh": "中文",
-    "vi": "VI",
-    "ko": "한국어"
+    "zh": "中文"
   }
 }
