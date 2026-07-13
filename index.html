@@ -250,33 +250,7 @@
           0 0 0 1px rgba(129, 140, 248, 0.35) inset,
           0 6px 18px -6px rgba(99, 102, 241, 0.45);
       }
-      .nav-wiki {
-        display: inline-flex;
-        align-items: center;
-        gap: 7px;
-        padding: 8px 14px;
-        border-radius: 10px;
-        font-size: 13.5px;
-        font-weight: 600;
-        color: var(--cyan);
-        background: rgba(34, 211, 238, 0.1);
-        border: 1px solid rgba(34, 211, 238, 0.32);
-        text-decoration: none;
-        transition: background 0.18s, border-color 0.18s, transform 0.18s, box-shadow 0.18s, color 0.18s;
-        margin-left: 4px;
-        white-space: nowrap;
-      }
-      .nav-wiki:hover {
-        background: rgba(34, 211, 238, 0.2);
-        border-color: rgba(34, 211, 238, 0.55);
-        transform: translateY(-1px);
-        color: #67e8f9;
-        box-shadow: 0 8px 20px rgba(34, 211, 238, 0.28);
-      }
-      .nav-wiki svg {
-        width: 14px;
-        height: 14px;
-      }
+
       .nav-cta {
         display: inline-flex;
         align-items: center;
@@ -759,13 +733,7 @@
         box-shadow: 0 0 10px var(--accent);
         flex-shrink: 0;
       }
-      .mobile-panel a.mp-cta.active,
-      .mobile-panel a.mp-wiki.active {
-        background: linear-gradient(135deg, var(--accent-strong), var(--violet));
-        color: #fff;
-      }
-      .mobile-panel a.mp-cta.active::before,
-      .mobile-panel a.mp-wiki.active::before { display: none; }
+
       .mobile-panel-close {
         position: absolute;
         top: calc(env(safe-area-inset-top, 0) + 14px);
@@ -805,14 +773,7 @@
         box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2) inset, 0 8px 22px rgba(99, 102, 241, 0.4);
       }
       .mobile-panel .mp-cta:hover { color: #fff; filter: brightness(1.08); }
-      .mobile-panel .mp-wiki {
-        color: var(--cyan);
-        background: rgba(34, 211, 238, 0.08);
-        border-color: rgba(34, 211, 238, 0.28);
-        justify-content: center;
-        font-weight: 600;
-      }
-      .mobile-panel .mp-wiki:hover { color: #67e8f9; background: rgba(34, 211, 238, 0.16); }
+
       .mobile-overlay {
         position: fixed;
         inset: 0;
@@ -1008,7 +969,6 @@
         .page-card:hover,
         .nav-link:hover,
         .nav-cta:hover,
-        .nav-wiki:hover,
         .btn:hover {
           transform: none;
         }
@@ -1042,17 +1002,6 @@
           <a href="#install" data-section="install" class="nav-link">Install</a>
           <a href="#stack" data-section="stack" class="nav-link">Stack</a>
           <a href="#faq" data-section="faq" class="nav-link">FAQ</a>
-          <a href="wiki/" class="nav-wiki" target="_blank" rel="noopener noreferrer">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-            </svg>
-            Wiki
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.7">
-              <path d="M7 17 17 7" />
-              <path d="M7 7h10v10" />
-            </svg>
-          </a>
           <a
             href="https://github.com/minimallism/agent-monitor"
             class="nav-cta"
@@ -1114,25 +1063,7 @@
       <a href="#stack" data-mp data-section="stack">Stack</a>
       <a href="#faq" data-mp data-section="faq">FAQ</a>
       <div class="mobile-panel-divider"></div>
-      <a href="wiki/" class="mp-wiki" target="_blank" rel="noopener noreferrer" data-mp>
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-        </svg>
-        Open the wiki
-      </a>
-      <a
-        href="https://github.com/minimallism/agent-monitor"
-        class="mp-cta"
-        target="_blank"
-        rel="noopener noreferrer"
-        data-mp
-      >
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.8.1-.8.1-.8 1.2.1 1.9 1.3 1.9 1.3 1.1 1.9 2.9 1.4 3.6 1 .1-.8.4-1.4.8-1.7-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.3-3.2-.1-.4-.6-1.6.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.8.1 3.2.8.8 1.3 1.9 1.3 3.2 0 4.6-2.8 5.6-5.5 5.9.5.3.9 1 .9 2v3c0 .3.2.7.8.6A12 12 0 0 0 12 .3" />
-        </svg>
-        Star on GitHub
-      </a>
+
     </aside>
 
     <main id="main">
@@ -1155,13 +1086,6 @@
               <polygon points="5 3 19 12 5 21 5 3" />
             </svg>
             Get started
-          </a>
-          <a href="wiki/" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-            </svg>
-            Read the wiki
           </a>
           <a
             href="https://github.com/minimallism/agent-monitor"
@@ -1774,13 +1698,7 @@
               sessions in <code>~/.claude/projects</code> import on first start. Prefer a
              .
             </p>
-            <a href="wiki/#quickstart" class="btn btn-primary" target="_blank" rel="noopener noreferrer">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-              </svg>
-              Full setup guide
-            </a>
+
             <a
               href="https://github.com/minimallism/agent-monitor"
               class="btn btn-tertiary"
@@ -1838,88 +1756,7 @@
             hook-driven event store, so what you see anywhere is the same source of truth.
           </p>
         </div>
-        <div class="pages-grid reveal-stagger">
-          <a href="wiki/#ss-dashboard" class="page-card" style="--page-accent: var(--accent)" target="_blank" rel="noopener noreferrer">
-            <div class="page-card-header">
-              <div class="page-card-title"><span class="page-card-dot"></span><span class="page-card-name">Dashboard</span></div>
-              <code class="page-card-route">/</code>
-            </div>
-            <p class="page-card-desc">Live overview of every active session, agent, and tool call across all projects.</p>
-            <svg class="page-card-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 5 7 7-7 7"/></svg>
-          </a>
-          <a href="wiki/#ss-kanban" class="page-card" style="--page-accent: var(--emerald)" target="_blank" rel="noopener noreferrer">
-            <div class="page-card-header">
-              <div class="page-card-title"><span class="page-card-dot"></span><span class="page-card-name">Kanban</span></div>
-              <code class="page-card-route">/kanban</code>
-            </div>
-            <p class="page-card-desc">Drag-free swim lanes by agent status - waiting, working, completed, error, abandoned.</p>
-            <svg class="page-card-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 5 7 7-7 7"/></svg>
-          </a>
-          <a href="wiki/#ss-sessions" class="page-card" style="--page-accent: var(--cyan)" target="_blank" rel="noopener noreferrer">
-            <div class="page-card-header">
-              <div class="page-card-title"><span class="page-card-dot"></span><span class="page-card-name">Sessions</span></div>
-              <code class="page-card-route">/sessions</code>
-            </div>
-            <p class="page-card-desc">Searchable, filterable list of every session with token, cost, and status facets.</p>
-            <svg class="page-card-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 5 7 7-7 7"/></svg>
-          </a>
-          <a href="wiki/#ss-session-detail" class="page-card" style="--page-accent: var(--pink)" target="_blank" rel="noopener noreferrer">
-            <div class="page-card-header">
-              <div class="page-card-title"><span class="page-card-dot"></span><span class="page-card-name">Session detail</span></div>
-              <code class="page-card-route">/sessions/:id</code>
-            </div>
-            <p class="page-card-desc">Full conversation transcript, agent tree, tool calls, errors, and per-turn token cost.</p>
-            <svg class="page-card-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 5 7 7-7 7"/></svg>
-          </a>
-          <a href="wiki/#ss-activity" class="page-card" style="--page-accent: var(--violet)" target="_blank" rel="noopener noreferrer">
-            <div class="page-card-header">
-              <div class="page-card-title"><span class="page-card-dot"></span><span class="page-card-name">Activity feed</span></div>
-              <code class="page-card-route">/activity</code>
-            </div>
-            <p class="page-card-desc">Real-time event log with grouping, multi-dimension filters, and pause / resume.</p>
-            <svg class="page-card-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 5 7 7-7 7"/></svg>
-          </a>
-          <a href="wiki/#ss-analytics" class="page-card" style="--page-accent: var(--amber)" target="_blank" rel="noopener noreferrer">
-            <div class="page-card-header">
-              <div class="page-card-title"><span class="page-card-dot"></span><span class="page-card-name">Analytics</span></div>
-              <code class="page-card-route">/analytics</code>
-            </div>
-            <p class="page-card-desc">Cost trends, model mix, tool usage, error rates, productivity heatmaps - 11 datasets.</p>
-            <svg class="page-card-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 5 7 7-7 7"/></svg>
-          </a>
-          <a href="wiki/#ss-workflows" class="page-card" style="--page-accent: var(--rose)" target="_blank" rel="noopener noreferrer">
-            <div class="page-card-header">
-              <div class="page-card-title"><span class="page-card-dot"></span><span class="page-card-name">Workflows</span></div>
-              <code class="page-card-route">/workflows</code>
-            </div>
-            <p class="page-card-desc">D3-rendered subagent DAGs, propagation maps, and complexity bubbles per session.</p>
-            <svg class="page-card-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 5 7 7-7 7"/></svg>
-          </a>
-          <a href="wiki/#ss-config" class="page-card" style="--page-accent: var(--amber)" target="_blank" rel="noopener noreferrer">
-            <div class="page-card-header">
-              <div class="page-card-title"><span class="page-card-dot"></span><span class="page-card-name">Config Explorer</span></div>
-              <code class="page-card-route">/cc-config</code>
-            </div>
-            <p class="page-card-desc">12-tab inspector for skills, subagents, plugins, MCP, hooks, settings, memory, and more.</p>
-            <svg class="page-card-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 5 7 7-7 7"/></svg>
-          </a>
-          <a href="wiki/#ss-run" class="page-card" style="--page-accent: var(--emerald)" target="_blank" rel="noopener noreferrer">
-            <div class="page-card-header">
-              <div class="page-card-title"><span class="page-card-dot"></span><span class="page-card-name">Run Claude</span></div>
-              <code class="page-card-route">/run</code>
-            </div>
-            <p class="page-card-desc">Spawn, resume, attach, and stream Claude subprocesses straight from the browser with full config control.</p>
-            <svg class="page-card-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 5 7 7-7 7"/></svg>
-          </a>
-          <a href="wiki/#ss-settings" class="page-card" style="--page-accent: var(--text-dim)" target="_blank" rel="noopener noreferrer">
-            <div class="page-card-header">
-              <div class="page-card-title"><span class="page-card-dot"></span><span class="page-card-name">Settings</span></div>
-              <code class="page-card-route">/settings</code>
-            </div>
-            <p class="page-card-desc">Pricing rules, hook installer, notification setup, theme, language, and data tools.</p>
-            <svg class="page-card-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 5 7 7-7 7"/></svg>
-          </a>
-        </div>
+
       </section>
 
       <!-- ─── STACK ─────────────────────────────────────── -->
@@ -1981,9 +1818,7 @@
           <div class="section-eyebrow">FAQ</div>
           <h2 class="section-title">Frequently asked questions.</h2>
           <p class="section-lead">
-            Quick answers to the things people ask most. The
-            <a href="wiki/" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: underline; text-underline-offset: 3px;">wiki</a>
-            has the full picture.
+            Quick answers to the things people ask most. The wiki has the full picture.
           </p>
         </div>
         <div class="faq reveal-stagger">
@@ -2089,26 +1924,7 @@
                   </svg>
                   Install in 60 seconds
                 </a>
-                <a href="wiki/" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-                  </svg>
-                  Read the wiki
-                </a>
-                <a
-                  href="https://github.com/minimallism/agent-monitor"
-                  class="btn btn-tertiary"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                      d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.8.1-.8.1-.8 1.2.1 1.9 1.3 1.9 1.3 1.1 1.9 2.9 1.4 3.6 1 .1-.8.4-1.4.8-1.7-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.3-3.2-.1-.4-.6-1.6.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.2 2.8.1 3.2.8.8 1.3 1.9 1.3 3.2 0 4.6-2.8 5.6-5.5 5.9.5.3.9 1 .9 2v3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"
-                    />
-                  </svg>
-                  Star on GitHub
-                </a>
+
               </div>
               <div class="big-cta-trust">
                 <span>
@@ -2159,7 +1975,6 @@
           <a href="#install">Install</a>
           <a href="#stack">Stack</a>
           <a href="#faq">FAQ</a>
-          <a href="wiki/" target="_blank" rel="noopener noreferrer">Wiki</a>
         </div>
         <div class="footer-col">
           <h4>Resources</h4>
@@ -2187,15 +2002,11 @@
             rel="noopener noreferrer"
             >MIT License</a
           >
-          <a href="wiki/#api-reference" target="_blank" rel="noopener noreferrer">API reference</a>
-          <a href="wiki/#mcp-agent-extensions" target="_blank" rel="noopener noreferrer">MCP server</a>
         </div>
       </div>
       <div class="footer-bottom">
         <span>© 2026 - MIT License</span>
         <span>
-          <a href="wiki/" target="_blank" rel="noopener noreferrer">Wiki</a>
-          ·
           <a href="https://github.com/minimallism/agent-monitor" target="_blank" rel="noopener noreferrer"
             >GitHub</a
           >
