@@ -53,6 +53,26 @@ function isOurEntry(entry) {
   return false;
 }
 
+function isInsideContainer() {
+  if (process.env.CONTAINER || process.env.KUBERNETES_SERVICE_HOST || process.env.KUBERNETES_PORT || process.env.POD_NAME) {
+    return true;
+  }
+  if (fs.existsSync("/.dockerenv") || fs.existsSync("/run/.containerenv")) {
+    return true;
+  }
+  try {
+    if (fs.existsSync("/proc/self/cgroup")) {
+      const cgroup = fs.readFileSync("/proc/self/cgroup", "utf8");
+      if (cgroup.includes("docker") || cgroup.includes("container")) {
+        return true;
+      }
+    }
+  } catch {
+    /* ignore — not running in container */
+  }
+  return false;
+}
+
 function installHooks(silent = false) {
   let settings = {};
   if (fs.existsSync(SETTINGS_PATH)) {
@@ -104,4 +124,4 @@ if (require.main === module) {
   if (!installHooks(false)) process.exitCode = 1;
 }
 
-module.exports = { installHooks };
+module.exports = { installHooks, isInsideContainer };

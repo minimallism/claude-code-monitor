@@ -231,6 +231,8 @@ function autoImportLegacySessions() {
  * `require.main === module` block below never executes for it.
  */
 function startBackgroundServices() {
+  const { broadcast } = require("./websocket");
+
   // One-time legacy-session backfill (a no-op once its marker file exists).
   autoImportLegacySessions();
 
