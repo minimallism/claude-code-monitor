@@ -1397,13 +1397,16 @@ export function Dashboard() {
                           event.event_type === "Stop"
                             ? event.summary?.toLowerCase().includes("error")
                               ? "error"
-                              : "completed"
+                              : "waiting"
                             : event.event_type === "APIError" ||
                                 event.summary?.toLowerCase().includes("error")
                               ? "error"
                               : event.event_type === "PreToolUse"
                                 ? "working"
-                                : "completed"
+                                : event.event_type === "SessionStart" ||
+                                    event.event_type === "SessionResumed"
+                                  ? "waiting"
+                                  : "completed"
                         }
                       />
                       <span className="text-sm text-gray-300 truncate flex-1">
