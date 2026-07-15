@@ -25,7 +25,6 @@ import {
 const NAV_KEYS = [
   { to: "/", icon: LayoutDashboard, key: "nav:dashboard" },
   { to: "/sessions", icon: FolderOpen, key: "nav:sessions" },
-  { to: "/activity", icon: Activity, key: "nav:activityFeed" },
   { to: "/analytics", icon: BarChart3, key: "nav:analytics" },
   { to: "/workflows", icon: Workflow, key: "nav:workflows" },
   { to: "/cc-config", icon: Boxes, key: "nav:ccConfig" },

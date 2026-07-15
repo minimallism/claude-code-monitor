@@ -16,8 +16,6 @@ import dashboard_en from "./locales/en/dashboard.json";
 import dashboard_zh from "./locales/zh/dashboard.json";
 import sessions_en from "./locales/en/sessions.json";
 import sessions_zh from "./locales/zh/sessions.json";
-import activity_en from "./locales/en/activity.json";
-import activity_zh from "./locales/zh/activity.json";
 import analytics_en from "./locales/en/analytics.json";
 import analytics_zh from "./locales/zh/analytics.json";
 import workflows_en from "./locales/en/workflows.json";
@@ -43,7 +41,6 @@ i18n
         nav: nav_en,
         dashboard: dashboard_en,
         sessions: sessions_en,
-        activity: activity_en,
         analytics: analytics_en,
         workflows: workflows_en,
         settings: settings_en,
@@ -57,7 +54,6 @@ i18n
         nav: nav_zh,
         dashboard: dashboard_zh,
         sessions: sessions_zh,
-        activity: activity_zh,
         analytics: analytics_zh,
         workflows: workflows_zh,
         settings: settings_zh,
@@ -75,7 +71,6 @@ i18n
       "nav",
       "dashboard",
       "sessions",
-      "activity",
       "analytics",
       "workflows",
       "settings",

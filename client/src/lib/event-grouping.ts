@@ -14,13 +14,16 @@ import type { DashboardEvent } from "./types";
 /** Best-effort status tag per event_type - drives the status badge shown on
  *  each row in the ActivityFeed / SessionDetail event streams.
  * @param type A `DashboardEvent.event_type` value (e.g. "PreToolUse", "Stop").
- * @returns The badge status; unrecognized types default to "waiting" rather
+ * @returns The badge status; unrecognized types default to "completed" rather
  *   than throwing, since new hook event types should degrade gracefully. */
 export function statusFromEventType(type: string): "working" | "waiting" | "completed" | "error" {
   switch (type) {
     case "PreToolUse":
       return "working";
     case "PostToolUse":
+      return "completed";
+    case "SessionStart":
+    case "SessionResumed":
     case "Stop":
       return "waiting";
     case "SubagentStop":
@@ -30,7 +33,7 @@ export function statusFromEventType(type: string): "working" | "waiting" | "comp
     case "APIError":
       return "error";
     default:
-      return "waiting";
+      return "completed";
   }
 }
 

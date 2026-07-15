@@ -1,6 +1,6 @@
 /**
  * @file Dashboard.tsx
- * @description Main dashboard page showing real-time stats, active agents, and recent activity feed for Claude Code sessions.
+ * @description Main dashboard page showing real-time stats and active agents for Claude Code sessions.
 
  */
 
@@ -22,7 +22,7 @@ import {
   Zap,
   DollarSign,
   Activity,
-  ArrowRight,
+
   RefreshCw,
   GitBranch,
   ChevronDown,
@@ -41,11 +41,10 @@ import { api } from "../lib/api";
 import { eventBus } from "../lib/eventBus";
 import { StatCard } from "../components/StatCard";
 import { AgentCard } from "../components/AgentCard";
-import { AgentStatusBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
 import { Tip } from "../components/Tip";
-import { timeAgo, fmt, fmtCost, formatModelName } from "../lib/format";
-import type { Stats, Agent, DashboardEvent, WSMessage, WorkflowData, Session } from "../lib/types";
+import { fmt, fmtCost, formatModelName } from "../lib/format";
+import type { Stats, Agent, WSMessage, WorkflowData, Session } from "../lib/types";
 
 interface SystemInfo {
   db: {
@@ -910,7 +909,6 @@ export function Dashboard() {
 
   const [stats, setStats] = useState<Stats | null>(null);
   const [activeAgents, setActiveAgents] = useState<Agent[]>([]);
-  const [recentEvents, setRecentEvents] = useState<DashboardEvent[]>([]);
   const [totalCost, setTotalCost] = useState<number | null>(null);
   const [allSubagents, setAllSubagents] = useState<Agent[]>([]);
   const [sessionsById, setSessionsById] = useState<Map<string, Session>>(new Map());
@@ -919,14 +917,11 @@ export function Dashboard() {
 
   // ResizeObserver — fill available container height per screen size
   const agentsRef = useRef<HTMLDivElement>(null);
-  const activityRef = useRef<HTMLDivElement>(null);
   const [visibleAgentCount, setVisibleAgentCount] = useState(6);
-  const [visibleActivityCount, setVisibleActivityCount] = useState(12);
 
   useEffect(() => {
     const HEADER_H = 32;
     const AGENT_H = 48;
-    const ACTIVITY_H = 38;
 
     function recalc() {
       if (agentsRef.current) {
@@ -934,28 +929,21 @@ export function Dashboard() {
           Math.max(3, Math.floor((agentsRef.current.clientHeight - HEADER_H) / AGENT_H))
         );
       }
-      if (activityRef.current) {
-        setVisibleActivityCount(
-          Math.max(3, Math.floor((activityRef.current.clientHeight - HEADER_H) / ACTIVITY_H))
-        );
-      }
     }
 
     const ro = new ResizeObserver(recalc);
     if (agentsRef.current) ro.observe(agentsRef.current);
-    if (activityRef.current) ro.observe(activityRef.current);
     recalc();
     return () => ro.disconnect();
   }, [activeTab]);
 
   const load = useCallback(async () => {
     try {
-      const [statsRes, workingRes, waitingRes, eventsRes, costRes, sessionsRes] = await Promise.all(
+      const [statsRes, workingRes, waitingRes, costRes, sessionsRes] = await Promise.all(
         [
           api.stats.get(),
           api.agents.list({ status: "working", limit: 20 }),
           api.agents.list({ status: "waiting", limit: 20 }),
-          api.events.list({ limit: 50 }),
           api.pricing.totalCost(),
           api.sessions.list({ status: "active", limit: 100 }),
         ]
@@ -963,7 +951,6 @@ export function Dashboard() {
       setStats(statsRes);
       const active = [...workingRes.agents, ...waitingRes.agents];
       setActiveAgents(active);
-      setRecentEvents(eventsRes.events);
       setTotalCost(costRes.total_cost);
       setSessionsById(new Map(sessionsRes.sessions.map((s) => [s.id, s])));
       setError(null);
@@ -1028,14 +1015,6 @@ export function Dashboard() {
         // Debounce rapid-fire updates (e.g., 5 agents created in 100ms)
         if (debounceRef.timer) clearTimeout(debounceRef.timer);
         debounceRef.timer = setTimeout(load, 300);
-      }
-      if (msg.type === "new_event") {
-        setRecentEvents((prev) => {
-          const newEvent = msg.data as DashboardEvent;
-          // Deduplicate by event ID to prevent WS + polling race condition
-          if (newEvent.id && prev.some((e) => e.id === newEvent.id)) return prev;
-          return [newEvent, ...prev.slice(0, 14)];
-        });
       }
     });
   }, [load]);
@@ -1203,243 +1182,163 @@ export function Dashboard() {
             />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-0 min-w-0 flex-1 min-h-0">
-            {/* Active agents */}
-            <div ref={agentsRef} className="min-w-0 overflow-y-auto pr-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-gray-300">{t("activeAgentsSection")}</h3>
-              </div>
-              {activeAgents.length === 0 ? (
-                <EmptyState icon={Bot} title={t("noAgents")} description={t("noAgentsDesc")} />
-              ) : (
-                <div className="space-y-2">
-                  {(() => {
-                    const { childrenByParent, getDescendants } = agentTree;
+          <div ref={agentsRef} className="min-w-0 flex-1 min-h-0 overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-gray-300">{t("activeAgentsSection")}</h3>
+            </div>
+            {activeAgents.length === 0 ? (
+              <EmptyState icon={Bot} title={t("noAgents")} description={t("noAgentsDesc")} />
+            ) : (
+              <div className="space-y-2">
+                {(() => {
+                  const { childrenByParent, getDescendants } = agentTree;
 
-                    function renderAgentNode(
-                      agent: Agent,
-                      depth: number,
-                      ancestors: Set<string> = new Set()
-                    ): ReactNode {
-                      // Guard against a cyclic parent_agent_id (corrupt data) so
-                      // the recursive render can't stack-overflow the page.
-                      if (ancestors.has(agent.id)) return null;
-                      const childAncestors = new Set(ancestors).add(agent.id);
-                      const children = childrenByParent.get(agent.id) || [];
-                      const isExpanded = expandedAgents.has(agent.id);
-                      const hasChildren = children.length > 0;
-                      const isSubagent = depth > 0;
-                      const { total: totalDesc, active: activeDesc } = hasChildren
-                        ? getDescendants(agent.id)
-                        : { total: 0, active: 0 };
-                      const toggleExpanded = () =>
-                        setExpandedAgents((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(agent.id)) next.delete(agent.id);
-                          else next.add(agent.id);
-                          return next;
-                        });
+                  function renderAgentNode(
+                    agent: Agent,
+                    depth: number,
+                    ancestors: Set<string> = new Set()
+                  ): ReactNode {
+                    // Guard against a cyclic parent_agent_id (corrupt data) so
+                    // the recursive render can't stack-overflow the page.
+                    if (ancestors.has(agent.id)) return null;
+                    const childAncestors = new Set(ancestors).add(agent.id);
+                    const children = childrenByParent.get(agent.id) || [];
+                    const isExpanded = expandedAgents.has(agent.id);
+                    const hasChildren = children.length > 0;
+                    const isSubagent = depth > 0;
+                    const { total: totalDesc, active: activeDesc } = hasChildren
+                      ? getDescendants(agent.id)
+                      : { total: 0, active: 0 };
+                    const toggleExpanded = () =>
+                      setExpandedAgents((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(agent.id)) next.delete(agent.id);
+                        else next.add(agent.id);
+                        return next;
+                      });
 
-                      return (
-                        <div key={agent.id}>
-                          <div className="flex items-center gap-1 min-w-0">
-                            {hasChildren && (
-                              <button
-                                onClick={toggleExpanded}
-                                className="p-1 text-gray-500 hover:text-gray-300 transition-colors flex-shrink-0"
-                                aria-label={isExpanded ? "Collapse subagents" : "Expand subagents"}
-                                aria-expanded={isExpanded}
-                              >
-                                {isExpanded ? (
-                                  <ChevronDown className="w-4 h-4" />
-                                ) : (
-                                  <ChevronRight className="w-4 h-4" />
-                                )}
-                              </button>
-                            )}
-                            {/* Reserve the chevron column even when this row
-                                has no chevron - without this, peer top-level
-                                mains would line up at different x positions
-                                depending on whether they have subagents,
-                                making chevron-having mains look indented
-                                like a subagent of the chevron-less main
-                                above them. A muted leaf-marker icon fills
-                                the slot so the column reads as deliberately
-                                empty rather than as a misalignment. */}
-                            {!hasChildren && !isSubagent && (
-                              <span
-                                className="w-6 h-6 flex-shrink-0 flex items-center justify-center text-violet-400/70"
-                                aria-hidden="true"
-                                title={t("common:noSubagents", "No subagents")}
-                              >
-                                <CircleDot className="w-4 h-4" strokeWidth={2} />
-                              </span>
-                            )}
-                            {isSubagent && (
-                              <GitBranch className="w-3 h-3 text-violet-400 flex-shrink-0" />
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <AgentCard
-                                agent={agent}
-                                session={sessionsById.get(agent.session_id)}
-                                // Card click always navigates (AgentCard's
-                                // default → session details), whether or not it
-                                // has children. Expand/collapse is handled solely
-                                // by the chevron button, so clicking a parent
-                                // (incl. the main agent) no longer toggles.
-                                onClick={undefined}
-                              />
-                            </div>
-                          </div>
-
-                          {hasChildren && isExpanded && (
-                            <div className="ml-6 mt-1 space-y-1 border-l-2 border-violet-500/20 pl-3">
-                              {children.map((child) =>
-                                renderAgentNode(child, depth + 1, childAncestors)
-                              )}
-                            </div>
-                          )}
-
-                          {hasChildren && !isExpanded && (
+                    return (
+                      <div key={agent.id}>
+                        <div className="flex items-center gap-1 min-w-0">
+                          {hasChildren && (
                             <button
-                              onClick={() =>
-                                setExpandedAgents((prev) => new Set([...prev, agent.id]))
-                              }
-                              className="ml-7 mt-1 text-[11px] text-violet-400 hover:text-violet-300 transition-colors"
+                              onClick={toggleExpanded}
+                              className="p-1 text-gray-500 hover:text-gray-300 transition-colors flex-shrink-0"
+                              aria-label={isExpanded ? "Collapse subagents" : "Expand subagents"}
+                              aria-expanded={isExpanded}
                             >
-                              {t("common:subagent_label", { count: totalDesc })}
-                              {activeDesc > 0 && (
-                                <span className="text-emerald-400 ml-1">
-                                  ({activeDesc} {t("common:active")})
-                                </span>
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4" />
                               )}
                             </button>
                           )}
+                          {/* Reserve the chevron column even when this row
+                              has no chevron - without this, peer top-level
+                              mains would line up at different x positions
+                              depending on whether they have subagents,
+                              making chevron-having mains look indented
+                              like a subagent of the chevron-less main
+                              above them. A muted leaf-marker icon fills
+                              the slot so the column reads as deliberately
+                              empty rather than as a misalignment. */}
+                          {!hasChildren && !isSubagent && (
+                            <span
+                              className="w-6 h-6 flex-shrink-0 flex items-center justify-center text-violet-400/70"
+                              aria-hidden="true"
+                              title={t("common:noSubagents", "No subagents")}
+                            >
+                              <CircleDot className="w-4 h-4" strokeWidth={2} />
+                            </span>
+                          )}
+                          {isSubagent && (
+                            <GitBranch className="w-3 h-3 text-violet-400 flex-shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <AgentCard
+                              agent={agent}
+                              session={sessionsById.get(agent.session_id)}
+                              // Card click always navigates (AgentCard's
+                              // default → session details), whether or not it
+                              // has children. Expand/collapse is handled solely
+                              // by the chevron button, so clicking a parent
+                              // (incl. the main agent) no longer toggles.
+                              onClick={undefined}
+                            />
+                          </div>
                         </div>
-                      );
-                    }
 
-                    // Build the set of agent ids that will be rendered as
-                    // descendants under the visible main-agent trees, so the
-                    // orphan-subagent block below doesn't render them a
-                    // second time at the root. Previously the orphan filter
-                    // was `a.type === "subagent"` with no parentage check,
-                    // which surfaced every nested subagent twice: once
-                    // indented under its main, and once flush at root level.
-                    const visibleMains = activeAgents
-                      .filter((a) => a.type === "main")
-                      .slice(0, visibleAgentCount);
-                    const renderedInTree = new Set<string>();
-                    for (const m of visibleMains) {
-                      const stack: string[] = [m.id];
-                      while (stack.length) {
-                        const id = stack.pop()!;
-                        if (renderedInTree.has(id)) continue;
-                        renderedInTree.add(id);
-                        for (const child of childrenByParent.get(id) || []) {
-                          stack.push(child.id);
-                        }
+                        {hasChildren && isExpanded && (
+                          <div className="ml-6 mt-1 space-y-1 border-l-2 border-violet-500/20 pl-3">
+                            {children.map((child) =>
+                              renderAgentNode(child, depth + 1, childAncestors)
+                            )}
+                          </div>
+                        )}
+
+                        {hasChildren && !isExpanded && (
+                          <button
+                            onClick={() =>
+                              setExpandedAgents((prev) => new Set([...prev, agent.id]))
+                            }
+                            className="ml-7 mt-1 text-[11px] text-violet-400 hover:text-violet-300 transition-colors"
+                          >
+                            {t("common:subagent_label", { count: totalDesc })}
+                            {activeDesc > 0 && (
+                              <span className="text-emerald-400 ml-1">
+                                ({activeDesc} {t("common:active")})
+                              </span>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  // Build the set of agent ids that will be rendered as
+                  // descendants under the visible main-agent trees, so the
+                  // orphan-subagent block below doesn't render them a
+                  // second time at the root. Previously the orphan filter
+                  // was `a.type === "subagent"` with no parentage check,
+                  // which surfaced every nested subagent twice: once
+                  // indented under its main, and once flush at root level.
+                  const visibleMains = activeAgents
+                    .filter((a) => a.type === "main")
+                    .slice(0, visibleAgentCount);
+                  const renderedInTree = new Set<string>();
+                  for (const m of visibleMains) {
+                    const stack: string[] = [m.id];
+                    while (stack.length) {
+                      const id = stack.pop()!;
+                      if (renderedInTree.has(id)) continue;
+                      renderedInTree.add(id);
+                      for (const child of childrenByParent.get(id) || []) {
+                        stack.push(child.id);
                       }
                     }
+                  }
 
-                    return (
-                      <>
-                        {visibleMains.map((main) => renderAgentNode(main, 0))}
-                        {/* Only true orphans: subagents whose ancestor chain
-                            isn't already shown in a tree above. */}
-                        {activeAgents
-                          .filter((a) => a.type === "subagent" && !renderedInTree.has(a.id))
-                          .map((agent) => (
-                            <div key={agent.id}>
-                              <AgentCard
-                                agent={agent}
-                                session={sessionsById.get(agent.session_id)}
-                              />
-                            </div>
-                          ))}
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
-            </div>
-
-            {/* Vertical Divider */}
-            <div className="hidden lg:block w-px bg-border self-stretch" />
-
-            {/* Recent activity */}
-            <div ref={activityRef} className="min-w-0 overflow-y-auto pl-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-gray-300">{t("recentActivity")}</h3>
-                <button onClick={() => navigate("/activity")} className="btn-ghost text-xs">
-                  {t("viewAll")} <ArrowRight className="w-3 h-3" />
-                </button>
+                  return (
+                    <>
+                      {visibleMains.map((main) => renderAgentNode(main, 0))}
+                      {/* Only true orphans: subagents whose ancestor chain
+                          isn't already shown in a tree above. */}
+                      {activeAgents
+                        .filter((a) => a.type === "subagent" && !renderedInTree.has(a.id))
+                        .map((agent) => (
+                          <div key={agent.id}>
+                            <AgentCard
+                              agent={agent}
+                              session={sessionsById.get(agent.session_id)}
+                            />
+                          </div>
+                        ))}
+                    </>
+                  );
+                })()}
               </div>
-              {recentEvents.length === 0 ? (
-                <EmptyState
-                  icon={Activity}
-                  title={t("noActivity")}
-                  description={t("noActivityDesc")}
-                />
-              ) : (
-                <div className="card divide-y divide-border">
-                  {recentEvents.slice(0, visibleActivityCount).map((event, i) => (
-                    <div
-                      key={event.id ?? i}
-                      className="px-4 py-3 flex items-center gap-3 hover:bg-surface-4 transition-colors cursor-pointer"
-                      onClick={() => navigate(`/sessions/${event.session_id}`)}
-                    >
-                      <AgentStatusBadge
-                        status={
-                          event.event_type === "Stop"
-                            ? event.summary?.toLowerCase().includes("error")
-                              ? "error"
-                              : "waiting"
-                            : event.event_type === "APIError" ||
-                                event.summary?.toLowerCase().includes("error")
-                              ? "error"
-                              : event.event_type === "PreToolUse"
-                                ? "working"
-                                : event.event_type === "SessionStart" ||
-                                    event.event_type === "SessionResumed"
-                                  ? "waiting"
-                                  : "completed"
-                        }
-                      />
-                      <span className="text-sm text-gray-300 truncate flex-1">
-                        {event.summary || event.event_type}
-                      </span>
-                      {(() => {
-                        // Session label: real name when one exists, else the
-                        // short ID - keeps every activity row attributable.
-                        const sname = sessionsById.get(event.session_id)?.name?.trim() || "";
-                        const isAuto = /^Session [0-9a-f]{8}$/i.test(sname);
-                        return (
-                          <span
-                            className="text-[11px] text-gray-500 truncate max-w-[9rem] flex-shrink-0"
-                            title={event.session_id}
-                          >
-                            {sname && !isAuto ? (
-                              sname
-                            ) : (
-                              <span className="font-mono">{event.session_id.slice(0, 8)}</span>
-                            )}
-                          </span>
-                        );
-                      })()}
-                      {event.tool_name && (
-                        <span className="text-[11px] text-gray-500 font-mono">
-                          {event.tool_name}
-                        </span>
-                      )}
-                      <span className="text-[11px] text-gray-600 flex-shrink-0">
-                        {timeAgo(event.created_at)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </div>
       ) : (
