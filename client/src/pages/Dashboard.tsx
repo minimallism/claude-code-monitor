@@ -1208,9 +1208,6 @@ export function Dashboard() {
             <div ref={agentsRef} className="min-w-0 overflow-y-auto pr-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-gray-300">{t("activeAgentsSection")}</h3>
-                <button onClick={() => navigate("/kanban")} className="btn-ghost text-xs">
-                  {t("viewBoard")} <ArrowRight className="w-3 h-3" />
-                </button>
               </div>
               {activeAgents.length === 0 ? (
                 <EmptyState icon={Bot} title={t("noAgents")} description={t("noAgentsDesc")} />

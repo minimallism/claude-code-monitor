@@ -38,7 +38,7 @@ interface AgentCardProps {
 
 export function AgentCard({ agent, session, label, onClick }: AgentCardProps) {
   const navigate = useNavigate();
-  const { t } = useTranslation("kanban");
+  const { t } = useTranslation();
   const isWaiting = agent.status === "waiting" || isAgentAwaitingInput(agent);
   const status = effectiveAgentStatus(agent);
   const isActive = agent.status === "working";
@@ -108,8 +108,8 @@ export function AgentCard({ agent, session, label, onClick }: AgentCardProps) {
   const subtitle = isMain
     ? [
         cwdBase,
-        subagentCount > 0 ? t("kanban:session.subagentSummary", { count: subagentCount }) : null,
-        sessionTurns > 0 ? t("kanban:session.turnSummary", { count: sessionTurns }) : null,
+        subagentCount > 0 ? t("subagentSummary", { count: subagentCount }) : null,
+        sessionTurns > 0 ? t("turnSummary", { count: sessionTurns }) : null,
       ]
         .filter(Boolean)
         .join(" · ") || null

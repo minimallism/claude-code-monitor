@@ -24,8 +24,6 @@ import workflows_en from "./locales/en/workflows.json";
 import workflows_zh from "./locales/zh/workflows.json";
 import settings_en from "./locales/en/settings.json";
 import settings_zh from "./locales/zh/settings.json";
-import kanban_en from "./locales/en/kanban.json";
-import kanban_zh from "./locales/zh/kanban.json";
 import errors_en from "./locales/en/errors.json";
 import errors_zh from "./locales/zh/errors.json";
 import ccConfig_en from "./locales/en/ccConfig.json";
@@ -49,7 +47,6 @@ i18n
         analytics: analytics_en,
         workflows: workflows_en,
         settings: settings_en,
-        kanban: kanban_en,
         errors: errors_en,
         ccConfig: ccConfig_en,
         alerts: alerts_en,
@@ -64,7 +61,6 @@ i18n
         analytics: analytics_zh,
         workflows: workflows_zh,
         settings: settings_zh,
-        kanban: kanban_zh,
         errors: errors_zh,
         ccConfig: ccConfig_zh,
         alerts: alerts_zh,
@@ -83,7 +79,6 @@ i18n
       "analytics",
       "workflows",
       "settings",
-      "kanban",
       "errors",
       "ccConfig",
       "alerts",
