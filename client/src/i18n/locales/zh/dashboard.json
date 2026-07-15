@@ -14,6 +14,5 @@
   "noAgentsDesc": "当 Claude Code 会话运行时，Agent将显示在此处。",
   "failedConnect": "无法连接到服务器",
   "failedLoad": "数据加载失败",
-  "activeTrend": " 活跃",
-  "totalTrend": "（活跃会话中）"
+  "activeTrend": " 活跃"
 }

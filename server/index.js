@@ -54,7 +54,6 @@ const settingsRouter = require("./routes/settings");
 const workflowsRouter = require("./routes/workflows");
 const pushRouter = require("./routes/push");
 const importRouter = require("./routes/import");
-const ccConfigRouter = require("./routes/cc-config");
 const alertsRouter = require("./routes/alerts");
 const webhooksRouter = require("./routes/webhooks");
 
@@ -79,7 +78,6 @@ function createApp() {
   app.use("/api/workflows", workflowsRouter);
   app.use("/api/push", pushRouter);
   app.use("/api/import", importRouter);
-  app.use("/api/cc-config", ccConfigRouter);
   app.use("/api/alerts", alertsRouter);
   app.use("/api/webhooks", webhooksRouter);
 
@@ -289,12 +287,6 @@ function startBackgroundServices() {
     if (t.unref) t.unref();
   }
 
-  try {
-    const { startCcWatcher } = require("./lib/cc-watcher");
-    startCcWatcher({ broadcast });
-  } catch (err) {
-    console.warn("cc-watcher failed to start:", err.message);
-  }
   // Near-real-time Workflow-tool run ingestion. The run journal is written when
   // a workflow finishes — which may not coincide with a hook — so a fast,
   // change-fingerprinted poll over active sessions keeps the UI fresh without
@@ -382,7 +374,7 @@ function startWorkflowPoll(broadcast) {
  *      ignored, so a busy session never thrashes the importer — the poll picks
  *      up its growth. Recursive watching is used only on macOS/Windows (native,
  *      stable); on Linux, where Node's userland recursive watcher trips on the
- *      high-churn projects tree (see lib/cc-watcher.js), we watch the root plus
+ *      high-churn projects tree, we watch the root plus
  *      each immediate child folder non-recursively instead.
  *   3. **Poll** — a periodic safety-net sweep (watchers can miss events / not
  *      fire on network filesystems). Tunable via `DASHBOARD_SESSION_SYNC_MS`

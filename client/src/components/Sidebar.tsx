@@ -13,7 +13,6 @@ import {
   Activity,
   BarChart3,
   Workflow,
-  Boxes,
   Settings,
   PanelLeftClose,
   PanelLeftOpen,
@@ -27,7 +26,6 @@ const NAV_KEYS = [
   { to: "/sessions", icon: FolderOpen, key: "nav:sessions" },
   { to: "/analytics", icon: BarChart3, key: "nav:analytics" },
   { to: "/workflows", icon: Workflow, key: "nav:workflows" },
-  { to: "/cc-config", icon: Boxes, key: "nav:ccConfig" },
   { to: "/settings", icon: Settings, key: "nav:settings" },
 ] as const;
 

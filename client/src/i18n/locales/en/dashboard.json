@@ -14,6 +14,5 @@
   "noAgentsDesc": "Agents will appear here when a Claude Code session is running.",
   "failedConnect": "Failed to connect to server",
   "failedLoad": "Failed to load data",
-  "activeTrend": " active",
-  "totalTrend": " in active sessions"
+  "activeTrend": " active"
 }

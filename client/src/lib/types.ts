@@ -371,26 +371,6 @@ export interface ImportProgressMessage {
   counters?: Record<string, number>;
 }
 
-/** Payload for the `cc_config_changed` WebSocket message: broadcast whenever a
- *  Claude Code config artifact (skill, agent, command, settings, memory, …) is
- *  written or deleted, either through the dashboard's cc-config editor or by
- *  an on-disk filesystem watcher, so other open tabs can refresh their view. */
-export interface CcConfigChangedPayload {
-  /** Whether the dashboard itself made the write, or an fs watcher observed
-   *  an external change (e.g. the user editing a file directly). */
-  source: "dashboard" | "fs";
-  /** Mutation kind; absent for some fs-watcher events that only report scope. */
-  action?: "write" | "delete";
-  /** "user" (~/.claude) or "project" (repo's .claude) config root affected. */
-  scope?: "user" | "project";
-  /** Artifact kind, e.g. "skills", "agents", "commands", "settings", "memory". */
-  type?: string;
-  /** Artifact name (e.g. skill/agent name); null/absent for whole-file events. */
-  name?: string | null;
-  /** Absolute file paths touched by this change, when known. */
-  paths?: string[];
-}
-
 // ── Alerting ──
 
 /** Kind of condition an {@link AlertRule} evaluates. "event_pattern" and
@@ -616,7 +596,6 @@ export interface WSMessage {
   /** Discriminant selecting which member of the `data` union applies:
    *  session_created/updated → Session; agent_created/updated → Agent;
    *  new_event → DashboardEvent; import.progress → ImportProgressMessage;
-   *  cc_config_changed → CcConfigChangedPayload;
    *  alert_triggered/alert_updated → AlertEvent; workflow_upserted → WorkflowRun. */
   type:
     | "session_created"
@@ -625,7 +604,6 @@ export interface WSMessage {
     | "agent_updated"
     | "new_event"
     | "import.progress"
-    | "cc_config_changed"
     | "alert_triggered"
     | "alert_updated"
     | "workflow_upserted";
@@ -634,7 +612,6 @@ export interface WSMessage {
     | Agent
     | DashboardEvent
     | ImportProgressMessage
-    | CcConfigChangedPayload
     | AlertEvent
     | WorkflowRun;
   /** ISO timestamp the server broadcast this message (not necessarily the

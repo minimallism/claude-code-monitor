@@ -556,7 +556,6 @@ export function Dashboard() {
               value={stats ? allSubagents.filter((a) => a.status === "working").length : ""}
               icon={GitBranch}
               accentColor="text-indigo-400"
-              trend={stats ? `${allSubagents.length}${t("totalTrend")}` : undefined}
               loading={!stats}
             />
             <StatCard
