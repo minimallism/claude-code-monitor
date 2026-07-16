@@ -5,15 +5,6 @@
   "acrossSessions": "跨所有追踪的会话",
   "basedOnUsage": "基于每模型 Token 使用量",
 
-  "claudeHome": {
-    "title": "CLAUDE_HOME",
-    "description": "Claude Code 会话数据的根目录。修改此项会立即更新 transcript 与导入的扫描路径。",
-    "save": "保存",
-    "saving": "保存中...",
-    "current": "当前：",
-    "placeholder": "/path/to/claude-home",
-    "saveFailed": "更新 CLAUDE_HOME 失败"
-  },
   "hooks": {
     "title": "钩子配置",
     "description": "Claude Code 钩子将事件实时转发到仪表盘。",
@@ -124,15 +115,6 @@
     "yesClearAll": "是的，清除所有数据",
     "clearAllData": "清除所有数据",
     "clearedResult": "已清除 {{count}} 行"
-  },
-  "about": {
-    "title": "关于",
-    "description": "服务器运行时信息。",
-    "uptime": "运行时间",
-    "nodejs": "Node.js",
-    "platform": "平台",
-    "wsClients": "WebSocket 客户端",
-    "loadingInfo": "正在加载服务器信息..."
   },
   "tables": {
     "sessions": "个会话",

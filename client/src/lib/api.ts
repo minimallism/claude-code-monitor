@@ -264,15 +264,6 @@ export const api = {
           keys: string[];
         };
       }>("/settings/info"),
-    /** Get/set the `~/.claude` root the server reads config from. */
-    claudeHome: {
-      get: () => request<{ claude_home: string }>("/settings/claude-home"),
-      set: (path: string) =>
-        request<{ ok: boolean; claude_home: string }>("/settings/claude-home", {
-          method: "PUT",
-          body: JSON.stringify({ path }),
-        }),
-    },
     /** POST /api/settings/clear-data - DESTRUCTIVE: wipes sessions/agents/
      *  events/etc. from the dashboard DB. Returns per-table row counts deleted. */
     clearData: () =>

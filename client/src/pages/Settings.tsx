@@ -15,7 +15,6 @@ import {
   RotateCcw,
   CheckCircle,
   XCircle,
-  Server,
   Bell,
   BellOff,
   BellRing,
@@ -28,16 +27,11 @@ import {
   ShieldCheck,
   ShieldAlert,
   ShieldX,
-  Clock,
-  Cpu,
-  Globe,
-  Wifi,
   Activity,
   Users,
   Layers,
   Coins,
   Settings as SettingsIcon,
-  FolderOpen,
   History,
   ChevronLeft,
   ChevronRight,
@@ -60,12 +54,10 @@ const SETTINGS_SECTIONS: {
   Icon: typeof Plug;
 }[] = [
   { id: "hooks", labelKey: "hooks.title", Icon: Plug },
-  { id: "claude-home", labelKey: "claudeHome.title", Icon: FolderOpen },
   { id: "import", labelKey: "import.title", fallback: "Import", Icon: History },
   { id: "notifications", labelKey: "notifications.title", Icon: Bell },
   { id: "alerts", labelKey: "alertsHub.title", Icon: BellRing },
   { id: "data", labelKey: "data.title", Icon: Database },
-  { id: "about", labelKey: "about.title", Icon: Server },
 ];
 
 // ─── Notification preferences ───
@@ -193,10 +185,6 @@ export function Settings() {
   const [notifPrefs, setNotifPrefs] = useState<NotifPrefs>(loadNotifPrefs);
   const [abandonHours, setAbandonHours] = useState("24");
   const [purgeDays, setPurgeDays] = useState("90");
-  const [claudeHome, setClaudeHomeState] = useState("");
-  const [claudeHomeInput, setClaudeHomeInput] = useState("");
-  const [claudeHomeSaving, setClaudeHomeSaving] = useState(false);
-  const [claudeHomeError, setClaudeHomeError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<string>("hooks");
   const tocRef = useRef<HTMLDivElement | null>(null);
   const [tocOverflow, setTocOverflow] = useState({ left: false, right: false });
@@ -256,13 +244,8 @@ export function Settings() {
 
   const load = useCallback(async () => {
     try {
-      const [infoRes, claudeHomeRes] = await Promise.all([
-        api.settings.info(),
-        api.settings.claudeHome.get(),
-      ]);
+      const infoRes = await api.settings.info();
       setSysInfo(infoRes);
-      setClaudeHomeState(claudeHomeRes.claude_home);
-      setClaudeHomeInput(claudeHomeRes.claude_home);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("messages.failedLoad"));
@@ -376,21 +359,6 @@ export function Settings() {
         );
       return parts.length > 0 ? parts.join(". ") : t("data.nothingToClean");
     });
-
-  const handleSaveClaudeHome = async () => {
-    if (claudeHomeInput === claudeHome) return;
-    setClaudeHomeSaving(true);
-    setClaudeHomeError(null);
-    try {
-      const res = await api.settings.claudeHome.set(claudeHomeInput);
-      setClaudeHomeState(res.claude_home);
-      setClaudeHomeInput(res.claude_home);
-    } catch (err) {
-      setClaudeHomeError(err instanceof Error ? err.message : t("claudeHome.saveFailed"));
-    } finally {
-      setClaudeHomeSaving(false);
-    }
-  };
 
   const actionBanner = (keys: string[]) => {
     const match = actionResult && keys.includes(actionResult.key) ? actionResult : null;
@@ -591,43 +559,6 @@ export function Settings() {
               </div>
               <p className="text-[11px] text-gray-600 font-mono truncate">{sysInfo.hooks.path}</p>
             </>
-          )}
-        </div>
-      </section>
-
-      {/* ─── CLAUDE HOME ─── */}
-      <section id="claude-home" className="scroll-mt-24">
-        <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2 mb-1">
-          <FolderOpen className="w-4 h-4 text-gray-500" />
-          {t("claudeHome.title")}
-        </h3>
-        <p className="text-xs text-gray-500 mb-4">{t("claudeHome.description")}</p>
-
-        <div className="card p-5 space-y-4">
-          <div className="flex items-center gap-3">
-            <input
-              type="text"
-              value={claudeHomeInput}
-              onChange={(e) => {
-                setClaudeHomeInput(e.target.value);
-                setClaudeHomeError(null);
-              }}
-              className="flex-1 bg-surface-4 border border-surface-3 rounded-lg px-3 py-2 text-sm text-gray-200 font-mono focus:outline-none focus:border-violet-500/50"
-              placeholder={t("claudeHome.placeholder")}
-            />
-            <button
-              onClick={handleSaveClaudeHome}
-              disabled={claudeHomeSaving || claudeHomeInput === claudeHome}
-              className="btn-primary px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {claudeHomeSaving ? t("claudeHome.saving") : t("claudeHome.save")}
-            </button>
-          </div>
-          {claudeHomeError && <p className="text-xs text-red-400">{claudeHomeError}</p>}
-          {claudeHome && (
-            <p className="text-xs text-gray-500">
-              {t("claudeHome.current")} <code className="text-gray-400">{claudeHome}</code>
-            </p>
           )}
         </div>
       </section>
@@ -975,65 +906,6 @@ export function Settings() {
         </div>
       </section>
 
-      {/* ─── ABOUT ─── */}
-      <section id="about" className="scroll-mt-24">
-        <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2 mb-1">
-          <Server className="w-4 h-4 text-gray-500" />
-          {t("about.title")}
-        </h3>
-        <p className="text-xs text-gray-500 mb-4">{t("about.description")}</p>
-
-        {sysInfo ? (
-          <div className="card p-5">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-surface-2 rounded-lg px-4 py-3">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <Clock className="w-4 h-4 text-blue-400" />
-                  <p className="text-[11px] text-gray-500 uppercase tracking-wider">
-                    {t("about.uptime")}
-                  </p>
-                </div>
-                <p className="text-sm font-semibold text-gray-200">
-                  {formatUptime(sysInfo.server.uptime)}
-                </p>
-              </div>
-              <div className="bg-surface-2 rounded-lg px-4 py-3">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <Cpu className="w-4 h-4 text-emerald-400" />
-                  <p className="text-[11px] text-gray-500 uppercase tracking-wider">
-                    {t("about.nodejs")}
-                  </p>
-                </div>
-                <p className="text-sm font-semibold text-gray-200 font-mono">
-                  {sysInfo.server.node_version}
-                </p>
-              </div>
-              <div className="bg-surface-2 rounded-lg px-4 py-3">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <Globe className="w-4 h-4 text-violet-400" />
-                  <p className="text-[11px] text-gray-500 uppercase tracking-wider">
-                    {t("about.platform")}
-                  </p>
-                </div>
-                <p className="text-sm font-semibold text-gray-200">{sysInfo.server.platform}</p>
-              </div>
-              <div className="bg-surface-2 rounded-lg px-4 py-3">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <Wifi className="w-4 h-4 text-amber-400" />
-                  <p className="text-[11px] text-gray-500 uppercase tracking-wider">
-                    {t("about.wsClients")}
-                  </p>
-                </div>
-                <p className="text-sm font-semibold text-gray-200">
-                  {sysInfo.server.ws_connections}
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <p className="text-xs text-gray-500">{t("about.loadingInfo")}</p>
-        )}
-      </section>
     </div>
   );
 }

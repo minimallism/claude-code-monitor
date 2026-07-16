@@ -5,15 +5,6 @@
   "acrossSessions": "Across all tracked sessions",
   "basedOnUsage": "Based on per-model token usage",
 
-  "claudeHome": {
-    "title": "CLAUDE_HOME",
-    "description": "Root directory for Claude Code session data. Changing this updates the scan path for transcripts and imports immediately.",
-    "save": "Save",
-    "saving": "Saving...",
-    "current": "Current:",
-    "placeholder": "/path/to/claude-home",
-    "saveFailed": "Failed to update CLAUDE_HOME"
-  },
   "hooks": {
     "title": "Hook Configuration",
     "description": "Claude Code hooks forward events to the dashboard in real time.",
@@ -124,15 +115,6 @@
     "yesClearAll": "Yes, Clear All",
     "clearAllData": "Clear All Data",
     "clearedResult": "Cleared {{count}} rows"
-  },
-  "about": {
-    "title": "About",
-    "description": "Server runtime information.",
-    "uptime": "Uptime",
-    "nodejs": "Node.js",
-    "platform": "Platform",
-    "wsClients": "WS Clients",
-    "loadingInfo": "Loading server info..."
   },
   "tables": {
     "sessions": "sessions",
