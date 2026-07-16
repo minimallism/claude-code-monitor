@@ -26,8 +26,6 @@
   "tokenMix": "Token 构成",
   "tokenBreakdown": "Token 细分",
   "tokenInfo": "Token 数据从 Claude Code Stop 事件中捕获。",
-  "subagentTypes": "Subagent类型",
-  "noSubagentData": "暂无Subagent数据。",
   "agentStatus": "Agent状态",
   "totalAgentsLabel": "总Agent数",
   "eventTypes": "事件类型",
@@ -40,6 +38,8 @@
   "noSessionTrendData": "暂无会话趋势数据。",
   "last7Days": "过去 7 天",
   "less": "少",
-  "more": "多"
+  "more": "多",
+  "sessionCountLabel_one": "{{count}} 个会话",
+  "sessionCountLabel_other": "{{count}} 个会话"
 }
 

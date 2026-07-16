@@ -20,7 +20,6 @@ router.get("/", (req, res) => {
   const toolUsage = stmts.toolUsageCounts.all();
   const dailyEvents = stmts.dailyEventCounts.all(tzModifier);
   const dailySessions = stmts.dailySessionCounts.all(tzModifier);
-  const agentTypes = stmts.agentTypeDistribution.all();
   const overview = stmts.stats.get();
   const agentsByStatus = stmts.agentStatusCounts.all();
   const sessionsByStatus = stmts.sessionStatusCounts.all();
@@ -67,7 +66,6 @@ router.get("/", (req, res) => {
     tool_usage: toolUsage,
     daily_events: dailyEvents,
     daily_sessions: dailySessions,
-    agent_types: agentTypes,
     event_types: eventTypes,
     avg_events_per_session: avgEvents?.avg ?? 0,
     total_subagents: totalSubagents?.count ?? 0,

@@ -224,8 +224,6 @@ export interface Analytics {
   daily_events: Array<{ date: string; count: number }>;
   /** New-session counts bucketed by local calendar day. */
   daily_sessions: Array<{ date: string; count: number }>;
-  /** Subagent counts grouped by `subagent_type`. */
-  agent_types: Array<{ subagent_type: string; count: number }>;
   /** Event counts grouped by `event_type`. */
   event_types: Array<{ event_type: string; count: number }>;
   /** Mean number of events per session, across all sessions. */
@@ -242,44 +240,6 @@ export interface Analytics {
   };
   agents_by_status: Record<string, number>;
   sessions_by_status: Record<string, number>;
-}
-
-/**
- * A user-defined cost rule row from GET/PUT /api/pricing. Token usage is
- * matched against the longest `model_pattern` whose `%`-wildcard regex matches
- * the bucket's model id (see server/routes/pricing.js `calculateCost`); all
- * rate fields are USD per million tokens ("MTok").
- */
-export interface ModelPricing {
-  /** SQL LIKE-style pattern (`%` wildcard) matched against a token bucket's
-   *  model id; longer/more-specific patterns win ties. Primary key. */
-  model_pattern: string;
-  /** Human-readable name shown in the Settings pricing table. */
-  display_name: string;
-  input_per_mtok: number;
-  output_per_mtok: number;
-  /** Rate for tokens served from prompt-cache reads (cheaper than input). */
-  cache_read_per_mtok: number;
-  /** Rate for tokens written to a 5-minute prompt-cache entry. */
-  cache_write_per_mtok: number;
-  /** Rate for tokens written to a 1-hour (extended) prompt-cache entry. */
-  cache_write_1h_per_mtok: number;
-  /** Premium input rate applied when a token bucket's `speed` is "fast". */
-  fast_input_per_mtok: number;
-  /** Premium output rate applied when a token bucket's `speed` is "fast". */
-  fast_output_per_mtok: number;
-  // Time-limited introductory rates: usage on/before intro_until (YYYY-MM-DD)
-  // prices at these rates, after it at the standard rates. null/0 = no intro.
-  intro_input_per_mtok?: number;
-  intro_output_per_mtok?: number;
-  intro_cache_read_per_mtok?: number;
-  intro_cache_write_per_mtok?: number;
-  intro_cache_write_1h_per_mtok?: number;
-  /** Last day (YYYY-MM-DD, inclusive) the intro rates apply; null/absent = no
-   *  active promo, so usage always prices at the standard rates above. */
-  intro_until?: string | null;
-  /** ISO timestamp this rule was last created/updated. */
-  updated_at: string;
 }
 
 /**
@@ -311,7 +271,7 @@ export interface CostBreakdown {
   code_execution_requests?: number;
   /** USD cost for this bucket (token cost + web-search surcharge). */
   cost: number;
-  /** The `ModelPricing.model_pattern` that matched, or null if no rule matched
+  /** The pricing rule `model_pattern` that matched, or null if no rule matched
    *  (in which case `cost` is 0 and the usage also appears in `unpriced_models`). */
   matched_rule: string | null;
 }
@@ -331,7 +291,7 @@ export interface CostFeatureCosts {
   code_execution_free_hours: number;
 }
 
-/** A model with recorded token usage but no matching {@link ModelPricing} rule -
+/** A model with recorded token usage but no matching pricing rule -
  *  its cost is $0 in the totals, surfaced here so the Settings UI can prompt
  *  the user to add a pricing rule instead of silently under-reporting cost. */
 export interface UnpricedModel {

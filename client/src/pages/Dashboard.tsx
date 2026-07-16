@@ -27,9 +27,6 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDot,
-  Server,
-  Plug,
-  Search,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { eventBus } from "../lib/eventBus";
@@ -40,128 +37,9 @@ import { Tip } from "../components/Tip";
 import { fmt, fmtCost } from "../lib/format";
 import type { Stats, Agent, WSMessage, Session, Analytics } from "../lib/types";
 
-interface SystemInfo {
-  hooks: { installed: boolean; path: string; hooks: Record<string, boolean> };
-  server: {
-    ws_connections: number;
-  };
-}
-
-function SystemHealthTab() {
-  const [info, setInfo] = useState<SystemInfo | null>(null);
-
-
-  const loadData = useCallback(async () => {
-    try {
-      const infoRes = await api.settings.info();
-      setInfo(infoRes as any);
-    } catch (e) {
-      console.error(e);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadData();
-    const int = setInterval(loadData, 30000); // 30s is sufficient for health metrics
-    return () => clearInterval(int);
-  }, [loadData]);
-
-
-
-  if (!info) {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="animate-pulse h-48 bg-surface-2 rounded-2xl" />
-        ))}
-      </div>
-    );
-  }
-
-
-  return (
-    <div className="space-y-6 animate-fade-in pb-10">
-
-
-
-
-
-      {/* Row 4: Integration Gateway */}
-      <div>
-        {/* Integration Gateway */}
-        <div className="card p-5 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Plug className="w-4 h-4 text-amber-400" />
-              <span className="text-xs text-gray-500 uppercase tracking-wider">Integration</span>
-            </div>
-            <span
-              className={`text-[10px] font-mono px-2 py-0.5 rounded ${info.hooks.installed ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-surface-3 text-gray-500 border border-border"}`}
-            >
-              {info.hooks.installed ? "Active" : "Offline"}
-            </span>
-          </div>
-
-          {Object.entries(info.hooks.hooks || {}).length > 0 ? (
-            <div className="space-y-2">
-              {Object.entries(info.hooks.hooks).map(([cwd, active]) => (
-                <Tip
-                  block
-                  key={cwd}
-                  raw={`Path: ${cwd}\nStatus: ${active ? "Connected" : "Disconnected"}`}
-                >
-                  <div className="flex items-center gap-3 bg-surface-2/50 px-3 py-2 rounded-lg border border-border/30 cursor-default">
-                    <div
-                      className={`w-2 h-2 rounded-full flex-shrink-0 ${active ? "bg-emerald-400" : "bg-gray-600"}`}
-                    />
-                    <span className="text-xs text-gray-300 truncate font-mono">
-                      {cwd.split("/").pop() || cwd}
-                    </span>
-                  </div>
-                </Tip>
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-6 border border-dashed border-border/40 rounded-lg">
-              <Search className="w-4 h-4 text-gray-600 mb-2" />
-              <p className="text-xs text-gray-500">No project hooks registered</p>
-            </div>
-          )}
-
-          <Tip
-            block
-            raw={`WebSocket connections: ${info.server.ws_connections}\nProtocol: RFC 6455`}
-          >
-            <div className="flex items-center gap-3 bg-emerald-500/5 px-3 py-2.5 rounded-lg border border-emerald-500/10 cursor-default">
-              <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-              <div>
-                <p className="text-[10px] text-emerald-400 font-medium">WebSocket Active</p>
-                <p className="text-[10px] text-gray-500">
-                  {info.server.ws_connections} connection
-                  {info.server.ws_connections !== 1 ? "s" : ""}
-                </p>
-              </div>
-            </div>
-          </Tip>
-        </div>
-
-      </div>
-    </div>
-  );
-}
-
 export function Dashboard() {
   const navigate = useNavigate();
   const { t } = useTranslation("dashboard");
-
-  // Persistent Tab State
-  const [activeTab, setActiveTab] = useState<"monitor" | "health">(() => {
-    return (localStorage.getItem("dashboard_tab") as "monitor" | "health") || "monitor";
-  });
-
-  useEffect(() => {
-    localStorage.setItem("dashboard_tab", activeTab);
-  }, [activeTab]);
 
   const [stats, setStats] = useState<Stats | null>(null);
   const [activeAgents, setActiveAgents] = useState<Agent[]>([]);
@@ -192,7 +70,7 @@ export function Dashboard() {
     if (agentsRef.current) ro.observe(agentsRef.current);
     recalc();
     return () => ro.disconnect();
-  }, [activeTab]);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -201,7 +79,7 @@ export function Dashboard() {
           api.stats.get(),
           api.agents.list({ status: "working", limit: 20 }),
           api.agents.list({ status: "waiting", limit: 20 }),
-          api.pricing.totalCost(),
+          api.cost.total(),
           api.sessions.list({ status: "active", limit: 100 }),
           api.analytics.get(),
         ]
@@ -360,37 +238,13 @@ export function Dashboard() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {/* Tabs */}
-          <div className="flex bg-surface-2 rounded-lg p-0.5 border border-border">
-            <button
-              onClick={() => setActiveTab("monitor")}
-              className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-2 ${
-                activeTab === "monitor"
-                  ? "bg-accent/15 text-accent shadow-sm"
-                  : "text-gray-500 hover:text-gray-300"
-              }`}
-            >
-              <Activity className="w-3.5 h-3.5" /> Monitor
-            </button>
-            <button
-              onClick={() => setActiveTab("health")}
-              className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-2 ${
-                activeTab === "health"
-                  ? "bg-accent/15 text-accent shadow-sm"
-                  : "text-gray-500 hover:text-gray-300"
-              }`}
-            >
-              <Server className="w-3.5 h-3.5" /> Health
-            </button>
-          </div>
           <button onClick={load} className="btn-ghost flex-shrink-0">
             <RefreshCw className="w-4 h-4" /> {t("common:refresh")}
           </button>
         </div>
       </div>
 
-      {activeTab === "monitor" ? (
-        <div className="flex-1 flex flex-col gap-3 min-h-0 overflow-hidden">
+      <div className="flex-1 flex flex-col gap-3 min-h-0 overflow-hidden">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 shrink-0">
             <StatCard
               label={t("totalSessions")}
@@ -619,11 +473,6 @@ export function Dashboard() {
             )}
           </div>
         </div>
-      ) : (
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <SystemHealthTab />
-        </div>
-      )}
-    </div>
+      </div>
   );
 }

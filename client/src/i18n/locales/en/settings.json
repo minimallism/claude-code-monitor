@@ -1,42 +1,10 @@
 {
   "title": "Settings",
-  "subtitle": "Manage pricing, notifications, data, and hooks",
+  "subtitle": "Manage notifications, data, and hooks",
   "exportData": "Export Data",
   "acrossSessions": "Across all tracked sessions",
   "basedOnUsage": "Based on per-model token usage",
-  "pricing": {
-    "title": "Model Pricing",
-    "description": "Rates per million tokens (USD). Use % as wildcard in patterns. Some models have a time-limited introductory rate (shown in violet); usage on or before its cutoff date is billed at that rate, and usage after it at the standard rate.",
-    "introNote": "Intro ${{input}}/${{output}} through {{until}}",
-    "introRatesTitle": "Introductory rates",
-    "introRatesHint": "Leave the date empty for no promo",
-    "introUntil": "Through (date)",
-    "introUntilInvalid": "Introductory cutoff must be a YYYY-MM-DD date",
-    "resetConfirm": "Confirm Reset",
-    "resetDefaults": "Reset Defaults",
-    "resetResult": "Reset to {{count}} default rules",
-    "addModel": "Add Model",
-    "pattern": "Pattern",
-    "patternPlaceholder": "claude-opus-4%",
-    "namePlaceholder": "Claude Opus 4",
-    "validationRequired": "Pattern and display name are required",
-    "lastUpdated": "Last updated: ",
-    "tooltip": {
-      "title": "How model pricing works",
-      "howItWorks": "How it works",
-      "howItWorksBody": "When a session reports usage, the dashboard finds the first pricing rule whose pattern matches the model id and multiplies (input tokens / 1M) and (output tokens / 1M) by the rates below to compute cost. Rules are evaluated top-to-bottom - the first match wins.",
-      "patternsTitle": "Pattern syntax",
-      "patternsBody": "Patterns are SQL-style globs. % is a wildcard that matches any characters. For example: claude-opus-4-7% matches every model id that starts with claude-opus-4-7 (e.g. claude-opus-4-7, claude-opus-4-7-20260101). claude-%-haiku matches any haiku variant. An exact id like claude-sonnet-4-6 only matches itself.",
-      "manualUpdates": "You must update prices manually",
-      "manualUpdatesBody": "Anthropic publishes pricing changes on their website - there is no live feed. When a new model launches or rates change, edit the matching rule (or add a new one above the catch-all) so newly recorded sessions are costed correctly. Already-stored sessions keep the price that was applied at ingest time.",
-      "apiPricing": "Reference only - API rates",
-      "apiPricingBody": "These are pay-as-you-go API rates. If you use Claude Code on a subscription plan (Pro, Max, Team, or Enterprise), your actual cost is a flat monthly fee, not per-token - so these figures will usually be higher than what you really pay. Treat the costs here as a usage estimate for reference, not a bill."
-    },
-    "cacheWrite5m": "Cache Write (5m)",
-    "cacheWrite1h": "Cache Write (1h)",
-    "fastInput": "Fast Input",
-    "fastOutput": "Fast Output"
-  },
+
   "claudeHome": {
     "title": "CLAUDE_HOME",
     "description": "Root directory for Claude Code session data. Changing this updates the scan path for transcripts and imports immediately.",
@@ -170,8 +138,7 @@
     "sessions": "sessions",
     "agents": "agents",
     "events": "events",
-    "sessionsWithCost": "sessions with cost",
-    "pricingRules": "pricing rules"
+    "sessionsWithCost": "sessions with cost"
   },
   "messages": {
     "failedLoad": "Failed to load",

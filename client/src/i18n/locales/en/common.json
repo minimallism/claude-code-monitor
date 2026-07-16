@@ -71,8 +71,7 @@
   "cost": {
     "model": "Model",
     "cost": "Cost",
-    "totalCost": "Total Cost",
-    "totalEstimatedCost": "Total Estimated Cost"
+    "totalCost": "Total Cost"
   },
   "duration": {
     "h_m": "{{h}}h {{m}}m",

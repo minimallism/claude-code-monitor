@@ -144,7 +144,7 @@ export function SessionDetail() {
     try {
       const [data, costData] = await Promise.all([
         api.sessions.get(id),
-        api.pricing.sessionCost(id).catch(() => null),
+        api.cost.session(id).catch(() => null),
       ]);
       setSession(data.session);
       setAgents(data.agents);

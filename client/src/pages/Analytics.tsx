@@ -11,6 +11,9 @@ import {
   Download,
   Clock,
   BarChart3,
+  Plug,
+  Search,
+  Activity,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { eventBus } from "../lib/eventBus";
@@ -18,6 +21,11 @@ import { fmt, formatModelName } from "../lib/format";
 import { Tip } from "../components/Tip";
 import { Skeleton } from "../components/Skeleton";
 import type { Analytics as AnalyticsData } from "../lib/types";
+
+interface SystemInfo {
+  hooks: { installed: boolean; path: string; hooks: Record<string, boolean> };
+  server: { ws_connections: number };
+}
 
 // ── Tooltip ───────────────────────────────────────────────────────────────────
 
@@ -241,9 +249,11 @@ function Heatmap({ weeks }: { weeks: Array<Array<{ date: string; count: number }
 function Sparkline({
   data,
   color = "#6366f1",
+  formatTooltip,
 }: {
   data: Array<{ date: string; count: number }>;
   color?: string;
+  formatTooltip?: (count: number) => string;
 }) {
   const { t } = useTranslation("analytics");
   const { show, move, hide, node } = useTooltip();
@@ -265,7 +275,7 @@ function Sparkline({
               e,
               <>
                 <span className="text-gray-400">{date}</span>
-                <span className="ml-2 font-medium">{t("eventCountLabel", { count })}</span>
+                <span className="ml-2 font-medium">{formatTooltip ? formatTooltip(count) : t("eventCountLabel", { count })}</span>
               </>
             )
           }
@@ -447,6 +457,7 @@ export function Analytics() {
   const [activeTab, setActiveTab] = useState<"tokens" | "workflow" | "productivity">(
     "tokens"
   );
+  const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null);
   const wsConnected = useSyncExternalStore(eventBus.onConnection, () => eventBus.connected);
 
   const load = useCallback(async () => {
@@ -464,6 +475,19 @@ export function Analytics() {
     const interval = setInterval(load, 15000);
     return () => clearInterval(interval);
   }, [load]);
+
+  const loadSysInfo = useCallback(async () => {
+    try {
+      const res = await api.settings.info();
+      setSysInfo(res as any);
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => {
+    loadSysInfo();
+    const int = setInterval(loadSysInfo, 30000);
+    return () => clearInterval(int);
+  }, [loadSysInfo]);
 
   useEffect(() => {
     return eventBus.subscribe((msg) => {
@@ -569,7 +593,6 @@ export function Analytics() {
     },
   ].filter((s) => s.value > 0);
 
-  const maxAgentTypeCount = data?.agent_types[0]?.count ?? 1;
   const maxEventTypeCount = data?.event_types[0]?.count ?? 1;
   const maxToolCount = (data?.tool_usage ?? [])[0]?.count ?? 1;
 
@@ -880,23 +903,64 @@ export function Analytics() {
 
             {activeTab === "workflow" && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {/* Agent type distribution */}
-                <div className="card p-5">
-                  <h3 className="text-sm font-medium text-gray-300 mb-5">{t("subagentTypes")}</h3>
-                  {(data?.agent_types ?? []).length === 0 ? (
-                    <p className="text-sm text-gray-500">{t("noSubagentData")}</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {(data?.agent_types ?? []).slice(0, 10).map(({ subagent_type, count }) => (
-                        <BarRow
-                          key={subagent_type}
-                          label={subagent_type}
-                          count={count}
-                          max={maxAgentTypeCount}
-                          color="bg-violet-400"
-                        />
+                {/* Integration Gateway */}
+                <div className="card p-5 flex flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Plug className="w-4 h-4 text-amber-400" />
+                      <span className="text-xs text-gray-500 uppercase tracking-wider">Integration</span>
+                    </div>
+                    <span
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded ${sysInfo?.hooks.installed ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-surface-3 text-gray-500 border border-border"}`}
+                    >
+                      {sysInfo?.hooks.installed ? "Active" : "Offline"}
+                    </span>
+                  </div>
+
+                  {!sysInfo ? (
+                    <div className="animate-pulse h-24 bg-surface-2 rounded-lg" />
+                  ) : Object.entries(sysInfo.hooks.hooks || {}).length > 0 ? (
+                    <div className="space-y-2">
+                      {Object.entries(sysInfo.hooks.hooks).map(([cwd, active]) => (
+                        <Tip
+                          block
+                          key={cwd}
+                          raw={`Path: ${cwd}\nStatus: ${active ? "Connected" : "Disconnected"}`}
+                        >
+                          <div className="flex items-center gap-3 bg-surface-2/50 px-3 py-2 rounded-lg border border-border/30 cursor-default">
+                            <div
+                              className={`w-2 h-2 rounded-full flex-shrink-0 ${active ? "bg-emerald-400" : "bg-gray-600"}`}
+                            />
+                            <span className="text-xs text-gray-300 truncate font-mono">
+                              {cwd.split("/").pop() || cwd}
+                            </span>
+                          </div>
+                        </Tip>
                       ))}
                     </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-6 border border-dashed border-border/40 rounded-lg">
+                      <Search className="w-4 h-4 text-gray-600 mb-2" />
+                      <p className="text-xs text-gray-500">No project hooks registered</p>
+                    </div>
+                  )}
+
+                  {sysInfo && (
+                    <Tip
+                      block
+                      raw={`WebSocket connections: ${sysInfo.server.ws_connections}\nProtocol: RFC 6455`}
+                    >
+                      <div className="flex items-center gap-3 bg-emerald-500/5 px-3 py-2.5 rounded-lg border border-emerald-500/10 cursor-default">
+                        <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                        <div>
+                          <p className="text-[10px] text-emerald-400 font-medium">WebSocket Active</p>
+                          <p className="text-[10px] text-gray-500">
+                            {sysInfo.server.ws_connections} connection
+                            {sysInfo.server.ws_connections !== 1 ? "s" : ""}
+                          </p>
+                        </div>
+                      </div>
+                    </Tip>
                   )}
                 </div>
 
@@ -1048,7 +1112,7 @@ export function Analytics() {
                     <p className="text-sm text-gray-500">{t("noSessionTrendData")}</p>
                   ) : (
                     <>
-                      <Sparkline data={dailySessionsLocal.slice(-30)} color="#6366f1" />
+                      <Sparkline data={dailySessionsLocal.slice(-30)} color="#6366f1" formatTooltip={(c) => t("sessionCountLabel", { count: c })} />
                       <div className="mt-4 space-y-2">
                         {dailySessionsLocal
                           .slice(-7)

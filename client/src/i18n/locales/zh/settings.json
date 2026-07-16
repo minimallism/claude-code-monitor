@@ -1,42 +1,10 @@
 {
   "title": "设置",
-  "subtitle": "管理定价、通知、数据和钩子",
+  "subtitle": "管理通知、数据和钩子",
   "exportData": "导出数据",
   "acrossSessions": "跨所有追踪的会话",
   "basedOnUsage": "基于每模型 Token 使用量",
-  "pricing": {
-    "title": "模型定价",
-    "description": "每百万 Token 的费率（美元）。在模式中使用 % 作为通配符。部分模型有限时优惠费率（以紫色显示）；在截止日期当天及之前的用量按该费率计费，之后按标准费率计费。",
-    "introNote": "优惠 ${{input}}/${{output}}，截止 {{until}}",
-    "introRatesTitle": "优惠费率",
-    "introRatesHint": "留空日期表示无优惠",
-    "introUntil": "截止（日期）",
-    "introUntilInvalid": "优惠截止日期必须为 YYYY-MM-DD 格式",
-    "resetConfirm": "确认重置",
-    "resetDefaults": "恢复默认",
-    "resetResult": "已重置为 {{count}} 条默认规则",
-    "addModel": "添加模型",
-    "pattern": "模式",
-    "patternPlaceholder": "claude-opus-4%",
-    "namePlaceholder": "Claude Opus 4",
-    "validationRequired": "模式和显示名称为必填项",
-    "lastUpdated": "最后更新：",
-    "tooltip": {
-      "title": "模型定价的工作原理",
-      "howItWorks": "工作原理",
-      "howItWorksBody": "当一个会话上报使用量时，仪表盘会查找第一个模式与 model id 匹配的定价规则，将（输入 token / 100 万）和（输出 token / 100 万）分别乘以下方的费率以计算费用。规则按从上到下的顺序匹配--首条匹配的规则生效。",
-      "patternsTitle": "模式语法",
-      "patternsBody": "模式采用 SQL 风格的通配。% 可匹配任意字符。例如：claude-opus-4-7% 匹配以 claude-opus-4-7 开头的所有 model id（如 claude-opus-4-7、claude-opus-4-7-20260101）。claude-%-haiku 匹配任意 haiku 变体。像 claude-sonnet-4-6 这样的精确 id 只匹配自身。",
-      "manualUpdates": "你必须手动更新价格",
-      "manualUpdatesBody": "Anthropic 在其官网公布价格变动--并没有实时数据源。当新模型发布或费率调整时，请编辑对应的规则（或在通用规则之上添加新规则），以便后续记录的会话能正确计费。已经存储的会话仍保留入库时使用的价格。",
-      "apiPricing": "仅供参考 - API 价格",
-      "apiPricingBody": "这些是按量付费的 API 价格。如果你通过订阅套餐（Pro、Max、Team 或 Enterprise）使用 Claude Code，你的实际花费是固定的月费，而非按 Token 计费--因此这里的数字通常会高于你实际支付的金额。请将此处的费用视为用量估算，仅供参考，并非账单。"
-    },
-    "cacheWrite5m": "缓存写入 (5m)",
-    "cacheWrite1h": "缓存写入 (1h)",
-    "fastInput": "快速输入",
-    "fastOutput": "快速输出"
-  },
+
   "claudeHome": {
     "title": "CLAUDE_HOME",
     "description": "Claude Code 会话数据的根目录。修改此项会立即更新 transcript 与导入的扫描路径。",
@@ -170,8 +138,7 @@
     "sessions": "个会话",
     "agents": "个Agent",
     "events": "个事件",
-    "sessionsWithCost": "个有费用的会话",
-    "pricingRules": "条定价规则"
+    "sessionsWithCost": "个有费用的会话"
   },
   "messages": {
     "failedLoad": "加载失败",

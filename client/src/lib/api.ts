@@ -11,7 +11,6 @@ import type {
   Analytics,
   CostResult,
   DashboardEvent,
-  ModelPricing,
   Session,
   SessionDrillIn,
   SessionStats,
@@ -294,12 +293,7 @@ export const api = {
         "/settings/reinstall-hooks",
         { method: "POST" }
       ),
-    /** POST /api/settings/reset-pricing - restore the built-in default
-     *  {@link ModelPricing} rules, discarding any custom edits. */
-    resetPricing: () =>
-      request<{ ok: boolean; pricing: ModelPricing[] }>("/settings/reset-pricing", {
-        method: "POST",
-      }),
+
     /** Direct download URL for GET /api/settings/export (a full DB dump);
      *  not fetched via {@link request} since it's used as an `<a href>`. */
     exportData: () => `${BASE}/settings/export`,
@@ -343,30 +337,14 @@ export const api = {
       request<WorkflowRunDetail>(`/workflows/runs/${encodeURIComponent(runId)}`),
   },
 
-  /** {@link ModelPricing} rule CRUD, plus computed cost totals. */
-  pricing: {
-    /** GET /api/pricing - all configured pricing rules. */
-    list: () => request<{ pricing: ModelPricing[] }>("/pricing"),
-    /** PUT /api/pricing - create a new rule or overwrite the one matching
-     *  `data.model_pattern` (the primary key). */
-    upsert: (data: Omit<ModelPricing, "updated_at">) =>
-      request<{ pricing: ModelPricing }>("/pricing", {
-        method: "PUT",
-        body: JSON.stringify(data),
-      }),
-    /** DELETE /api/pricing/:pattern - remove a rule; usage matching it then
-     *  falls through to a less-specific rule or `unpriced_models`. */
-    delete: (pattern: string) =>
-      request<{ ok: boolean }>(`/pricing/${encodeURIComponent(pattern)}`, {
-        method: "DELETE",
-      }),
-    /** GET /api/pricing/cost - total cost across every session, priced with
-     *  each day's rate (respects time-limited intro pricing). */
-    totalCost: () =>
+  /** GET /api/pricing/cost - total cost across every session, priced with
+   *  each day's rate (respects time-limited intro pricing). */
+  cost: {
+    total: () =>
       request<CostResult>(`/pricing/cost?tz_offset=${new Date().getTimezoneOffset()}`),
     /** GET /api/pricing/cost/:sessionId - cost for one session, priced as of
      *  the session's start date. */
-    sessionCost: (sessionId: string) =>
+    session: (sessionId: string) =>
       request<CostResult>(
         `/pricing/cost/${encodeURIComponent(sessionId)}?tz_offset=${new Date().getTimezoneOffset()}`
       ),

@@ -1,5 +1,5 @@
 /**
- * @file Express router for settings-related endpoints, providing system info, database statistics, hook status, and operations to clear data, re-import sessions, reinstall hooks, reset pricing, export data, and perform cleanup of stale sessions. This allows the frontend to manage and maintain the agent monitoring system effectively.
+ * @file Express router for settings-related endpoints, providing system info, database statistics, hook status, and operations to clear data, re-import sessions, reinstall hooks, export data, and perform cleanup of stale sessions. This allows the frontend to manage and maintain the agent monitoring system effectively.
 
  */
 
@@ -7,7 +7,7 @@ const { Router } = require("express");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { db, stmts, DB_PATH, DEFAULT_PRICING, applyIntroPricing } = require("../db");
+const { db, stmts, DB_PATH } = require("../db");
 const { getConnectionCount } = require("../websocket");
 const { transcriptCache } = require("./hooks");
 
@@ -26,7 +26,7 @@ function getDbSize() {
 }
 
 function getTableCounts() {
-  const tables = ["sessions", "agents", "events", "model_pricing"];
+  const tables = ["sessions", "agents", "events"];
   const counts = {};
   for (const t of tables) {
     counts[t] = db.prepare(`SELECT COUNT(*) as c FROM ${t}`).get().c;
@@ -131,11 +131,9 @@ router.post("/clear-data", (_req, res) => {
   db.prepare("DELETE FROM events").run();
   db.prepare("DELETE FROM agents").run();
   db.prepare("DELETE FROM sessions").run();
-  // Fired alerts reference the cleared sessions — wipe the feed too. Alert
-  // *rules* survive: they're user configuration, like model_pricing.
+  // Alert *rules* survive: they're user configuration.
   db.prepare("DELETE FROM alert_events").run();
-  // Webhook delivery log is an audit trail of those fired alerts — wipe it too.
-  // Webhook *targets* survive, like alert rules and pricing.
+  // Webhook *targets* survive, like alert rules.
   db.prepare("DELETE FROM webhook_deliveries").run();
   db.pragma("foreign_keys = ON");
   res.json({ ok: true, cleared: counts });
@@ -167,24 +165,6 @@ router.post("/reinstall-hooks", (_req, res) => {
       error: { code: "HOOK_INSTALL_FAILED", message: err.message },
     });
   }
-});
-
-// POST /api/settings/reset-pricing — reset pricing to defaults
-router.post("/reset-pricing", (_req, res) => {
-  db.prepare("DELETE FROM model_pricing").run();
-
-  const seedPricing = db.prepare(
-    "INSERT OR IGNORE INTO model_pricing (model_pattern, display_name, input_per_mtok, output_per_mtok, cache_read_per_mtok, cache_write_per_mtok, cache_write_1h_per_mtok, fast_input_per_mtok, fast_output_per_mtok) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  );
-  for (const [pattern, name, inp, out, cr, cw, cw1h, fin, fout] of DEFAULT_PRICING) {
-    seedPricing.run(pattern, name, inp, out, cr, cw, cw1h, fin, fout);
-  }
-  // Re-apply time-limited intro rates (e.g. Sonnet 5) — the seed above only
-  // carries standard rates, so without this a reset silently drops the promo.
-  applyIntroPricing(db);
-
-  const pricing = stmts.listPricing.all();
-  res.json({ ok: true, pricing });
 });
 
 // GET /api/settings/export — export all data as JSON

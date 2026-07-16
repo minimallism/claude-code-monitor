@@ -71,8 +71,7 @@
   "cost": {
     "model": "模型",
     "cost": "费用",
-    "totalCost": "总费用",
-    "totalEstimatedCost": "预估总费用"
+    "totalCost": "总费用"
   },
   "duration": {
     "h_m": "{{h}}时{{m}}分",

@@ -1,6 +1,5 @@
 /**
- * @file Database setup and access layer using SQLite for storing sessions, agents, events, token usage, and model pricing. Handles schema creation, migrations, and provides prepared statements for all database operations.
-
+ * @file Database setup and access layer using SQLite for storing sessions, agents, events, and token usage. Handles schema creation, migrations, and provides prepared statements for all database operations.
  */
 
 let Database;
@@ -452,83 +451,6 @@ try {
   }
   db.prepare("ALTER TABLE model_pricing ADD COLUMN intro_until TEXT").run();
 }
-
-// Default model pricing — shared by initial seed + startup top-up + reset endpoint
-// Columns: pattern, display_name, input, output, cache_read (hits & refreshes),
-//          cache_write (5m ephemeral writes), cache_write_1h (1h ephemeral writes),
-//          fast_input, fast_output (fast-mode premium; 0 = model has no fast pricing)
-// Each model gets its own explicit row — no catch-all grouping.
-// Rate shape mirrors Anthropic's published table: 5m write = 1.25× input, 1h write = 2× input.
-const DEFAULT_PRICING = [
-  // Next-gen flagship
-  ["claude-fable-5%", "Claude Fable 5", 10, 50, 1, 12.5, 20, 0, 0],
-  ["claude-mythos-5%", "Claude Mythos 5", 10, 50, 1, 12.5, 20, 0, 0],
-  // Opus family (fast mode available on 4.6 / 4.7 / 4.8)
-  ["claude-opus-4-8%", "Claude Opus 4.8", 5, 25, 0.5, 6.25, 10, 10, 50],
-  ["claude-opus-4-7%", "Claude Opus 4.7", 5, 25, 0.5, 6.25, 10, 30, 150],
-  ["claude-opus-4-6%", "Claude Opus 4.6", 5, 25, 0.5, 6.25, 10, 30, 150],
-  ["claude-opus-4-5%", "Claude Opus 4.5", 5, 25, 0.5, 6.25, 10, 0, 0],
-  ["claude-opus-4-1%", "Claude Opus 4.1", 15, 75, 1.5, 18.75, 30, 0, 0],
-  ["claude-opus-4-2%", "Claude Opus 4", 15, 75, 1.5, 18.75, 30, 0, 0],
-  // Sonnet family
-  ["claude-sonnet-5%", "Claude Sonnet 5", 3, 15, 0.3, 3.75, 6, 0, 0],
-  ["claude-sonnet-4-6%", "Claude Sonnet 4.6", 3, 15, 0.3, 3.75, 6, 0, 0],
-  ["claude-sonnet-4-5%", "Claude Sonnet 4.5", 3, 15, 0.3, 3.75, 6, 0, 0],
-  ["claude-sonnet-4-2%", "Claude Sonnet 4", 3, 15, 0.3, 3.75, 6, 0, 0],
-  ["claude-3-7-sonnet%", "Claude Sonnet 3.7", 3, 15, 0.3, 3.75, 6, 0, 0],
-  ["claude-3-5-sonnet%", "Claude Sonnet 3.5", 3, 15, 0.3, 3.75, 6, 0, 0],
-  // Haiku family
-  ["claude-haiku-4-5%", "Claude Haiku 4.5", 1, 5, 0.1, 1.25, 2, 0, 0],
-  ["claude-3-5-haiku%", "Claude Haiku 3.5", 0.8, 4, 0.08, 1, 1.6, 0, 0],
-  ["claude-3-haiku%", "Claude Haiku 3", 0.25, 1.25, 0.03, 0.3, 0.5, 0, 0],
-  // Legacy
-  ["claude-3-opus%", "Claude Opus 3", 15, 75, 1.5, 18.75, 30, 0, 0],
-];
-
-// Top-up: insert any default pattern that isn't already present. Preserves
-// user edits to existing rows — we only add what's missing, never overwrite.
-// This runs every startup so new default models (e.g. Opus 4.8) appear in the
-// Settings UI automatically without requiring a manual "Reset Defaults".
-{
-  const existing = new Set(
-    db
-      .prepare("SELECT model_pattern FROM model_pricing")
-      .all()
-      .map((r) => r.model_pattern)
-  );
-  const insert = db.prepare(
-    "INSERT OR IGNORE INTO model_pricing (model_pattern, display_name, input_per_mtok, output_per_mtok, cache_read_per_mtok, cache_write_per_mtok, cache_write_1h_per_mtok, fast_input_per_mtok, fast_output_per_mtok) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  );
-  const addMissing = db.transaction((rows) => {
-    for (const [pattern, name, inp, out, cr, cw, cw1h, fin, fout] of rows) {
-      if (!existing.has(pattern)) insert.run(pattern, name, inp, out, cr, cw, cw1h, fin, fout);
-    }
-  });
-  addMissing(DEFAULT_PRICING);
-}
-
-// Known introductory promo rates: [pattern, in, out, cacheRead, cw5m, cw1h, until].
-// Standard rates live in the DEFAULT_PRICING row; these add the time-limited
-// discount on top. Claude Sonnet 5: 2/3-off launch pricing through 2026-08-31.
-const DEFAULT_INTRO_PRICING = [["claude-sonnet-5%", 2, 10, 0.2, 2.5, 4, "2026-08-31"]];
-
-// Backfill the known intro rates. Only fills rows whose intro_until is still
-// NULL, so a user who edits or clears an intro rate in Settings is never
-// overwritten. Shared by startup and the reset-pricing endpoint (which
-// re-seeds standard rates and must re-apply the intro discount too, else Sonnet
-// 5 would silently price at standard until the next restart).
-function applyIntroPricing(dbHandle = db) {
-  const setIntro = dbHandle.prepare(
-    `UPDATE model_pricing SET
-       intro_input_per_mtok = ?, intro_output_per_mtok = ?, intro_cache_read_per_mtok = ?,
-       intro_cache_write_per_mtok = ?, intro_cache_write_1h_per_mtok = ?, intro_until = ?
-     WHERE model_pattern = ? AND intro_until IS NULL`
-  );
-  for (const [pattern, inp, out, cr, cw5m, cw1h, until] of DEFAULT_INTRO_PRICING) {
-    setIntro.run(inp, out, cr, cw5m, cw1h, until, pattern);
-  }
-}
-applyIntroPricing();
 
 // Migrate: if token_usage has rows without model column (old schema), add it
 try {
@@ -1083,42 +1005,8 @@ const stmts = {
     FROM token_usage WHERE session_id = ?`
   ),
 
-  // Model pricing
+  // Model pricing (keep listPricing + matchPricing for cost calculation)
   listPricing: db.prepare("SELECT * FROM model_pricing ORDER BY display_name ASC"),
-  getPricing: db.prepare("SELECT * FROM model_pricing WHERE model_pattern = ?"),
-  upsertPricing: db.prepare(`
-    INSERT INTO model_pricing (model_pattern, display_name, input_per_mtok, output_per_mtok, cache_read_per_mtok, cache_write_per_mtok, cache_write_1h_per_mtok, fast_input_per_mtok, fast_output_per_mtok, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-    ON CONFLICT(model_pattern) DO UPDATE SET
-      display_name = excluded.display_name,
-      input_per_mtok = excluded.input_per_mtok,
-      output_per_mtok = excluded.output_per_mtok,
-      cache_read_per_mtok = excluded.cache_read_per_mtok,
-      cache_write_per_mtok = excluded.cache_write_per_mtok,
-      cache_write_1h_per_mtok = excluded.cache_write_1h_per_mtok,
-      fast_input_per_mtok = excluded.fast_input_per_mtok,
-      fast_output_per_mtok = excluded.fast_output_per_mtok,
-      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-  `),
-  // Update ONLY the time-limited introductory rates for an existing row. Kept
-  // separate from upsertPricing so a standard-rate edit never touches intro
-  // columns (and vice versa): the PUT route calls this only when the caller
-  // actually sends intro fields, so legacy callers that omit them preserve any
-  // promo untouched. intro_until = NULL clears the promo (row reverts to
-  // standard rates at all dates). This is fully generic — any model pattern can
-  // carry a promo window, not just Sonnet 5.
-  setIntroPricing: db.prepare(`
-    UPDATE model_pricing SET
-      intro_input_per_mtok = ?,
-      intro_output_per_mtok = ?,
-      intro_cache_read_per_mtok = ?,
-      intro_cache_write_per_mtok = ?,
-      intro_cache_write_1h_per_mtok = ?,
-      intro_until = ?,
-      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-    WHERE model_pattern = ?
-  `),
-  deletePricing: db.prepare("DELETE FROM model_pricing WHERE model_pattern = ?"),
   matchPricing: db.prepare(
     "SELECT * FROM model_pricing WHERE ? LIKE REPLACE(model_pattern, '%', '%') LIMIT 1"
   ),
@@ -1144,13 +1032,6 @@ const stmts = {
     WHERE started_at >= DATE('now', '-365 days')
     GROUP BY 1
     ORDER BY date ASC
-  `),
-  agentTypeDistribution: db.prepare(`
-    SELECT subagent_type, COUNT(*) as count
-    FROM agents
-    WHERE type = 'subagent' AND subagent_type IS NOT NULL
-    GROUP BY subagent_type
-    ORDER BY count DESC
   `),
   totalSubagentCount: db.prepare("SELECT COUNT(*) as count FROM agents WHERE type = 'subagent'"),
   eventTypeCounts: db.prepare(`
@@ -1360,4 +1241,4 @@ const stmts = {
   ),
 };
 
-module.exports = { db, stmts, DB_PATH, DEFAULT_PRICING, applyIntroPricing };
+module.exports = { db, stmts, DB_PATH };

@@ -26,8 +26,6 @@
   "tokenMix": "Token Mix",
   "tokenBreakdown": "Token Breakdown",
   "tokenInfo": "Token data captured from Claude Code Stop events.",
-  "subagentTypes": "Subagent Types",
-  "noSubagentData": "No subagent data yet.",
   "agentStatus": "Agent Status",
   "totalAgentsLabel": "Total agents",
   "eventTypes": "Event Types",
@@ -40,6 +38,8 @@
   "noSessionTrendData": "No session trend data yet.",
   "last7Days": "Last 7 days",
   "less": "Less",
-  "more": "More"
+  "more": "More",
+  "sessionCountLabel_one": "{{count}} session",
+  "sessionCountLabel_other": "{{count}} sessions"
 }
 
