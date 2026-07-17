@@ -222,13 +222,6 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   );
 
-  CREATE TABLE IF NOT EXISTS push_subscriptions (
-    endpoint TEXT PRIMARY KEY,
-    p256dh TEXT NOT NULL,
-    auth TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-  );
-
   CREATE INDEX IF NOT EXISTS idx_agents_session ON agents(session_id);
   CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
   CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);

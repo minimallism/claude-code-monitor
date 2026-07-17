@@ -1,6 +1,6 @@
 {
   "title": "设置",
-  "subtitle": "管理通知、数据和钩子",
+  "subtitle": "管理钩子和数据",
   "exportData": "导出数据",
   "acrossSessions": "跨所有追踪的会话",
   "basedOnUsage": "基于每模型 Token 使用量",
@@ -13,23 +13,6 @@
     "reinstall": "重新安装钩子",
     "success": "钩子安装成功",
     "failed": "钩子安装失败"
-  },
-  "notifications": {
-    "title": "通知",
-    "description": "重要事件的浏览器通知。需要授权。",
-    "enable": "启用浏览器通知",
-    "granted": "已授权",
-    "blocked": "已阻止",
-    "required": "需要授权",
-    "notifyWhen": "通知我当...",
-    "newSession": "新会话开始",
-    "sessionComplete": "会话完成",
-    "sessionError": "会话出错",
-    "subagentSpawned": "Subagent生成",
-    "testTitle": "Agent 监控",
-    "testBody": "通知功能正常！",
-    "sendTest": "发送测试通知",
-    "disabledInfo": "通知已禁用 - 启用以获取会话事件提醒"
   },
   "data": {
     "title": "数据管理",

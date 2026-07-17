@@ -1,6 +1,6 @@
 /**
  * @file Settings.tsx
- * @description Provides a settings page for managing notification preferences, system information, data, and hooks with real-time updates and actionable controls.
+ * @description Provides a settings page for managing system information, data, and hooks with real-time updates and actionable controls.
 
  */
 
@@ -15,18 +15,8 @@ import {
   RotateCcw,
   CheckCircle,
   XCircle,
-  Bell,
-  BellOff,
-  BellRing,
   FileDown,
   Eraser,
-  Play,
-  Zap,
-  AlertCircle,
-  GitBranch,
-  ShieldCheck,
-  ShieldAlert,
-  ShieldX,
   Activity,
   Users,
   Layers,
@@ -51,43 +41,9 @@ const SETTINGS_SECTIONS: {
   Icon: typeof Plug;
 }[] = [
   { id: "hooks", labelKey: "hooks.title", Icon: Plug },
-  { id: "notifications", labelKey: "notifications.title", Icon: Bell },
   { id: "data", labelKey: "data.title", Icon: Database },
 ];
 
-// ─── Notification preferences ───
-
-const NOTIF_KEY = "agent-monitor-notifications";
-
-interface NotifPrefs {
-  enabled: boolean;
-  onNewSession: boolean;
-  onSessionError: boolean;
-  onSessionComplete: boolean;
-  onSubagentSpawn: boolean;
-}
-
-const defaultNotif: NotifPrefs = {
-  enabled: false,
-  onNewSession: true,
-  onSessionError: true,
-  onSessionComplete: false,
-  onSubagentSpawn: false,
-};
-
-function loadNotifPrefs(): NotifPrefs {
-  try {
-    const raw = localStorage.getItem(NOTIF_KEY);
-    if (!raw) return { ...defaultNotif };
-    return { ...defaultNotif, ...JSON.parse(raw) };
-  } catch {
-    return { ...defaultNotif };
-  }
-}
-
-function saveNotifPrefs(prefs: NotifPrefs) {
-  localStorage.setItem(NOTIF_KEY, JSON.stringify(prefs));
-}
 
 // ─── Helpers ───
 
@@ -177,7 +133,6 @@ export function Settings() {
     isError: boolean;
   } | null>(null);
   const [confirmAction, setConfirmAction] = useState<string | null>(null);
-  const [notifPrefs, setNotifPrefs] = useState<NotifPrefs>(loadNotifPrefs);
   const [abandonHours, setAbandonHours] = useState("24");
   const [purgeDays, setPurgeDays] = useState("90");
   const [activeSection, setActiveSection] = useState<string>("hooks");
@@ -285,23 +240,6 @@ export function Settings() {
     const timeout = setTimeout(() => setActionResult(null), 5000);
     return () => clearTimeout(timeout);
   }, [actionResult]);
-
-  const updateNotifPrefs = (patch: Partial<NotifPrefs>) => {
-    setNotifPrefs((prev) => {
-      const next = { ...prev, ...patch };
-      saveNotifPrefs(next);
-      return next;
-    });
-  };
-
-  const requestNotifPermission = async () => {
-    if (!("Notification" in window)) return;
-    const perm = await Notification.requestPermission();
-    if (perm === "granted") {
-      updateNotifPrefs({ enabled: true });
-    }
-  };
-
 
 
   const runAction = async (key: string, fn: () => Promise<string>) => {
@@ -554,144 +492,6 @@ export function Settings() {
               </div>
               <p className="text-[11px] text-gray-600 font-mono truncate">{sysInfo.hooks.path}</p>
             </>
-          )}
-        </div>
-      </section>
-
-      {/* ─── NOTIFICATIONS ─── */}
-      <section id="notifications" className="scroll-mt-24">
-        <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2 mb-1">
-          <Bell className="w-4 h-4 text-gray-500" />
-          {t("notifications.title")}
-        </h3>
-        <p className="text-xs text-gray-500 mb-4">{t("notifications.description")}</p>
-
-        <div className="card p-5 space-y-5">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-3">
-              <div
-                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-                  notifPrefs.enabled
-                    ? "bg-blue-500/10 border border-blue-500/20"
-                    : "bg-surface-2 border border-border"
-                }`}
-              >
-                {notifPrefs.enabled ? (
-                  <BellRing className="w-5 h-5 text-blue-400" />
-                ) : (
-                  <BellOff className="w-5 h-5 text-gray-500" />
-                )}
-              </div>
-              <Toggle
-                checked={notifPrefs.enabled}
-                onChange={async (v) => {
-                  if (v) {
-                    if ("Notification" in window && Notification.permission !== "granted") {
-                      requestNotifPermission();
-                    } else {
-                      updateNotifPrefs({ enabled: true });
-                    }
-                  } else {
-                    updateNotifPrefs({ enabled: false });
-                  }
-                }}
-                label={t("notifications.enable")}
-              />
-            </div>
-            {"Notification" in window && (
-              <span
-                className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${
-                  Notification.permission === "granted"
-                    ? "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20"
-                    : Notification.permission === "denied"
-                      ? "text-red-400 bg-red-500/10 border border-red-500/20"
-                      : "text-amber-400 bg-amber-500/10 border border-amber-500/20"
-                }`}
-              >
-                {Notification.permission === "granted" ? (
-                  <ShieldCheck className="w-3 h-3" />
-                ) : Notification.permission === "denied" ? (
-                  <ShieldX className="w-3 h-3" />
-                ) : (
-                  <ShieldAlert className="w-3 h-3" />
-                )}
-                {Notification.permission === "granted"
-                  ? t("notifications.granted")
-                  : Notification.permission === "denied"
-                    ? t("notifications.blocked")
-                    : t("notifications.required")}
-              </span>
-            )}
-          </div>
-
-          {notifPrefs.enabled && (
-            <div className="space-y-3 pt-4 border-t border-border">
-              <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">
-                {t("notifications.notifyWhen")}
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div className="flex items-center gap-3 bg-surface-2 rounded-lg px-3.5 py-3">
-                  <Play className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                  <Toggle
-                    checked={notifPrefs.onNewSession}
-                    onChange={(v) => updateNotifPrefs({ onNewSession: v })}
-                    label={t("notifications.newSession")}
-                  />
-                </div>
-                <div className="flex items-center gap-3 bg-surface-2 rounded-lg px-3.5 py-3">
-                  <CheckCircle className="w-4 h-4 text-violet-400 flex-shrink-0" />
-                  <Toggle
-                    checked={notifPrefs.onSessionComplete}
-                    onChange={(v) => updateNotifPrefs({ onSessionComplete: v })}
-                    label={t("notifications.sessionComplete")}
-                  />
-                </div>
-                <div className="flex items-center gap-3 bg-surface-2 rounded-lg px-3.5 py-3">
-                  <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
-                  <Toggle
-                    checked={notifPrefs.onSessionError}
-                    onChange={(v) => updateNotifPrefs({ onSessionError: v })}
-                    label={t("notifications.sessionError")}
-                  />
-                </div>
-                <div className="flex items-center gap-3 bg-surface-2 rounded-lg px-3.5 py-3">
-                  <GitBranch className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                  <Toggle
-                    checked={notifPrefs.onSubagentSpawn}
-                    onChange={(v) => updateNotifPrefs({ onSubagentSpawn: v })}
-                    label={t("notifications.subagentSpawned")}
-                  />
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-border">
-                <button
-                  onClick={async () => {
-                    if (!("Notification" in window) || Notification.permission !== "granted")
-                      return;
-                    await fetch("/api/push/send", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        title: t("notifications.testTitle"),
-                        body: t("notifications.testBody"),
-                      }),
-                    });
-                  }}
-                  className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md text-gray-400 hover:text-gray-200 hover:bg-surface-4 border border-border transition-colors"
-                >
-                  <Zap className="w-3 h-3" />
-                  {t("notifications.sendTest")}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!notifPrefs.enabled && (
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <BellOff className="w-3.5 h-3.5" />
-              {t("notifications.disabledInfo")}
-            </div>
           )}
         </div>
       </section>

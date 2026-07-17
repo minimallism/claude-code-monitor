@@ -1,6 +1,6 @@
 {
   "title": "Settings",
-  "subtitle": "Manage notifications, data, and hooks",
+  "subtitle": "Manage hooks and data",
   "exportData": "Export Data",
   "acrossSessions": "Across all tracked sessions",
   "basedOnUsage": "Based on per-model token usage",
@@ -13,23 +13,6 @@
     "reinstall": "Reinstall Hooks",
     "success": "Hooks installed successfully",
     "failed": "Hook installation failed"
-  },
-  "notifications": {
-    "title": "Notifications",
-    "description": "Browser notifications for important events. Requires permission.",
-    "enable": "Enable Browser Notifications",
-    "granted": "Permission granted",
-    "blocked": "Permission blocked",
-    "required": "Permission required",
-    "notifyWhen": "Notify me when...",
-    "newSession": "New session starts",
-    "sessionComplete": "Session completes",
-    "sessionError": "Session errors",
-    "subagentSpawned": "Subagent spawned",
-    "testTitle": "Agent Monitor",
-    "testBody": "Notifications are working!",
-    "sendTest": "Send Test Notification",
-    "disabledInfo": "Notifications are disabled - enable to get alerts for session events"
   },
   "data": {
     "title": "Data Management",

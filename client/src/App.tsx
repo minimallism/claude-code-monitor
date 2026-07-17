@@ -1,6 +1,6 @@
 /**
  * @file App.tsx
- * @description Defines the main application component that sets up routing for different pages, manages WebSocket connections for real-time updates, and initializes notifications. It uses React Router for navigation and custom hooks for WebSocket and notification handling.
+ * @description Defines the main application component that sets up routing for different pages and manages WebSocket connections for real-time updates. It uses React Router for navigation and a custom hook for WebSocket handling.
 
  */
 
@@ -16,7 +16,6 @@ import { Workflows } from "./pages/Workflows";
 import { Settings } from "./pages/Settings";
 import { NotFound } from "./pages/NotFound";
 import { useWebSocket } from "./hooks/useWebSocket";
-import { useNotifications } from "./hooks/useNotifications";
 import { eventBus } from "./lib/eventBus";
 import type { WSMessage } from "./lib/types";
 
@@ -26,8 +25,6 @@ export default function App() {
   }, []);
 
   useWebSocket(onMessage);
-  useNotifications();
-
   return (
     <>
       <SplashScreen />

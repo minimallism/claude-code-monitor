@@ -6,18 +6,6 @@
     "goDashboard": "Go to Dashboard",
     "goBack": "Go Back"
   },
-  "notifications": {
-    "newSession": "New Session",
-    "sessionDefault": "Session ",
-    "sessionError": "Session Error",
-    "subagentSpawned": "Subagent Spawned",
-    "finishedResponding": "Claude Finished Responding",
-    "readyForInput": "Ready for input",
-    "sessionCompleted": "Session Completed",
-    "sessionClosed": "Session closed",
-    "defaultTitle": "Claude Code",
-    "defaultBody": "Notification"
-  },
   "toolLegend": {
     "read": "Read",
     "write": "Write",
