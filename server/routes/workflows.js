@@ -39,50 +39,7 @@ router.get("/", (req, res) => {
   }
 });
 
-// ── GET /session/:id — Single session drill-in ──
-router.get("/session/:id", (req, res) => {
-  try {
-    const sessionId = req.params.id;
-    const session = stmts.getSession.get(sessionId);
-    if (!session) return res.status(404).json({ error: { message: "Session not found" } });
 
-    const agents = stmts.listAgentsBySession.all(sessionId);
-    const events = db
-      .prepare("SELECT * FROM events WHERE session_id = ? ORDER BY created_at ASC, id ASC")
-      .all(sessionId);
-
-    // Build agent tree
-    const tree = buildAgentTree(agents);
-
-    // Build tool timeline
-    const toolTimeline = events
-      .filter((e) => e.tool_name)
-      .map((e) => ({
-        id: e.id,
-        tool_name: e.tool_name,
-        event_type: e.event_type,
-        agent_id: e.agent_id,
-        created_at: e.created_at,
-        summary: e.summary,
-      }));
-
-    // Agent swim lanes
-    const swimLanes = agents.map((a) => ({
-      id: a.id,
-      name: a.name,
-      type: a.type,
-      subagent_type: a.subagent_type,
-      status: a.status,
-      started_at: a.started_at,
-      ended_at: a.ended_at,
-      parent_agent_id: a.parent_agent_id,
-    }));
-
-    res.json({ session, tree, toolTimeline, swimLanes, events: events.slice(0, 500) });
-  } catch (err) {
-    res.status(500).json({ error: { message: err.message } });
-  }
-});
 
 // ═══════════════════════════════════════════════════
 // Data-fetching functions
@@ -736,32 +693,6 @@ function getAgentCooccurrence(statusFilter) {
   return pairs;
 }
 
-// ── Build agent tree from flat list ──
-function buildAgentTree(agents) {
-  const map = {};
-  const roots = [];
-  for (const a of agents) {
-    map[a.id] = {
-      id: a.id,
-      name: a.name,
-      type: a.type,
-      subagent_type: a.subagent_type,
-      status: a.status,
-      task: a.task,
-      started_at: a.started_at,
-      ended_at: a.ended_at,
-      children: [],
-    };
-  }
-  for (const a of agents) {
-    if (a.parent_agent_id && map[a.parent_agent_id]) {
-      map[a.parent_agent_id].children.push(map[a.id]);
-    } else {
-      roots.push(map[a.id]);
-    }
-  }
-  return roots;
-}
 
 // ── Workflow-tool runs (issue #167) ───────────────────────────────────────
 // Distinct from the analytics above: these are fleets spawned by the Claude

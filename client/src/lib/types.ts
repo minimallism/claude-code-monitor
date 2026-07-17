@@ -588,48 +588,6 @@ export interface WorkflowData {
   cooccurrence: Array<{ source: string; target: string; weight: number }>;
 }
 
-/** Response shape of GET /api/workflows/session/:id - the single-session
- *  drill-in view (agent tree, tool timeline, swim lanes, raw events). */
-export interface SessionDrillIn {
-  session: Session;
-  /** Agents nested into a parent→child tree (roots = agents with no parent). */
-  tree: Array<{
-    id: string;
-    name: string;
-    type: string;
-    subagent_type: string | null;
-    status: string;
-    task: string | null;
-    started_at: string;
-    ended_at: string | null;
-    /** Recursively nested child agents (empty array for leaves). */
-    children: SessionDrillIn["tree"];
-  }>;
-  /** Every tool-invoking event in the session, chronological, flattened for
-   *  the horizontal tool-usage timeline. */
-  toolTimeline: Array<{
-    id: number;
-    tool_name: string;
-    event_type: string;
-    agent_id: string | null;
-    created_at: string;
-    summary: string | null;
-  }>;
-  /** Flat per-agent metadata (no nesting) for rendering horizontal swim lanes
-   *  against the session timeline; `parent_agent_id` lets the UI draw links. */
-  swimLanes: Array<{
-    id: string;
-    name: string;
-    type: string;
-    subagent_type: string | null;
-    status: string;
-    started_at: string;
-    ended_at: string | null;
-    parent_agent_id: string | null;
-  }>;
-  /** Up to the first 500 raw events for this session, chronological. */
-  events: DashboardEvent[];
-}
 
 // ── Workflow-tool runs (issue #167) ──────────────────────────────────────────
 // Fleets of inner sub-agents spawned by the Claude Code "Workflow" tool,

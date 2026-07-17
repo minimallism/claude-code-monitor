@@ -10,7 +10,6 @@ import type {
   CostResult,
   DashboardEvent,
   Session,
-  SessionDrillIn,
   SessionStats,
   Stats,
   TranscriptListResult,
@@ -287,17 +286,13 @@ export const api = {
       }>("/settings/cleanup", { method: "POST", body: JSON.stringify(params) }),
   },
 
-  /** Events-derived workflow intelligence (`get`/`session`) plus Workflow-tool
-   *  fleet runs ingested from on-disk journals (`runs`/`run`). */
+  /** Events-derived workflow intelligence plus Workflow-tool fleet runs
+   *  ingested from on-disk journals (`runs`/`run`). */
   workflows: {
     /** GET /api/workflows - the full {@link WorkflowData} panel bundle,
      *  optionally filtered to "active"/"completed" sessions. */
     get: (status?: string) =>
       request<WorkflowData>(`/workflows${status && status !== "all" ? `?status=${status}` : ""}`),
-    /** GET /api/workflows/session/:id - single-session drill-in (agent tree,
-     *  tool timeline, swim lanes). */
-    session: (id: string) =>
-      request<SessionDrillIn>(`/workflows/session/${encodeURIComponent(id)}`),
     // Workflow-tool runs (issue #167) - fleets ingested from on-disk journals.
     /** GET /api/workflows/runs - paginated Workflow-tool run list. */
     runs: (params?: { status?: string; session_id?: string; limit?: number; offset?: number }) => {

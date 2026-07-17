@@ -29,7 +29,6 @@ import { ErrorPropagationMap } from "../components/workflows/ErrorPropagationMap
 import { ConcurrencyTimeline } from "../components/workflows/ConcurrencyTimeline";
 import { SessionComplexityScatter } from "../components/workflows/SessionComplexityScatter";
 import { CompactionImpact } from "../components/workflows/CompactionImpact";
-import { SessionDrillIn } from "../components/workflows/SessionDrillIn";
 import { WorkflowRunsPanel } from "../components/workflows/WorkflowRunsPanel";
 
 type StatusFilter = "all" | "active" | "completed";
@@ -40,7 +39,6 @@ export function Workflows() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
@@ -270,7 +268,7 @@ export function Workflows() {
           subtitle={t("complexity.subtitle")}
           infoKey="complexity"
         >
-          <SessionComplexityScatter data={data.complexity} onSessionClick={setSelectedSessionId} />
+          <SessionComplexityScatter data={data.complexity} />
         </Section>
 
         <Section
@@ -282,20 +280,6 @@ export function Workflows() {
           <CompactionImpact data={data.compaction} />
         </Section>
       </div>
-
-      {/* Section 11: Session Drill-In */}
-      <Section
-        number={11}
-        title={t("drillIn.title")}
-        subtitle={t("drillIn.subtitle")}
-        infoKey="drillIn"
-      >
-        <SessionDrillIn
-          sessionId={selectedSessionId}
-          onClose={() => setSelectedSessionId(null)}
-          onSelectSession={(id) => setSelectedSessionId(id)}
-        />
-      </Section>
     </div>
   );
 }
