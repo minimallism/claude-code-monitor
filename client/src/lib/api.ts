@@ -6,8 +6,6 @@
 
 import type {
   Agent,
-  AlertEvent,
-  AlertRule,
   Analytics,
   CostResult,
   DashboardEvent,
@@ -17,11 +15,6 @@ import type {
   Stats,
   TranscriptListResult,
   TranscriptResult,
-  WebhookDelivery,
-  WebhookProvider,
-  WebhookTarget,
-  WebhookTestResult,
-  WebhookType,
   WorkflowData,
   WorkflowRun,
   WorkflowRunsResponse,
@@ -270,13 +263,6 @@ export const api = {
       request<{ ok: boolean; cleared: Record<string, number> }>("/settings/clear-data", {
         method: "POST",
       }),
-    /** POST /api/settings/reimport - re-scan `~/.claude/projects` and
-     *  backfill anything not already in the DB. */
-    reimport: () =>
-      request<{ ok: boolean; imported: number; skipped: number; errors: number }>(
-        "/settings/reimport",
-        { method: "POST" }
-      ),
     /** POST /api/settings/reinstall-hooks - re-write the dashboard's Claude
      *  Code hook entries into `~/.claude/settings.json`. */
     reinstallHooks: () =>
@@ -341,182 +327,6 @@ export const api = {
       ),
   },
 
-  /** Transcript import: on-disk scan/rescan, an explicit path scan, or a
-   *  browser file upload - all three converge on the same {@link ImportResult}
-   *  shape and stream progress via the `import.progress` WS message. */
-  import: {
-    /** GET /api/import/guide - platform-specific instructions and constraints
-     *  (default projects dir, supported extensions, upload limits) shown on
-     *  first run / in the Import wizard. */
-    guide: () =>
-      request<{
-        platform: string;
-        default_projects_dir: string;
-        default_projects_dir_display: string;
-        default_projects_dir_exists: boolean;
-        default_projects_dir_stats: { projects: number; jsonl_files: number };
-        archive_command: string;
-        supported_extensions: string[];
-        max_upload_bytes: number;
-        max_upload_files: number;
-        steps: { id: string; title: string; body: string }[];
-      }>("/import/guide"),
-    /** POST /api/import/rescan - re-scan the default projects directory. */
-    rescan: () => request<ImportResult>("/import/rescan", { method: "POST" }),
-    /** POST /api/import/scan-path - scan an arbitrary directory for
-     *  Claude Code project transcripts. */
-    scanPath: (path: string) =>
-      request<ImportResult>("/import/scan-path", {
-        method: "POST",
-        body: JSON.stringify({ path }),
-      }),
-    /** POST /api/import/upload (multipart) - import a set of user-selected
-     *  transcript files. Bypasses {@link request} to use `FormData`. */
-    upload: async (files: File[]): Promise<ImportResult> => {
-      const form = new FormData();
-      for (const f of files) form.append("files", f, f.name);
-      const res = await fetch(`${BASE}/import/upload`, { method: "POST", body: form });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error?.message || `HTTP ${res.status}`);
-      }
-      return res.json();
-    },
-  },
 
-  /** Alert rule CRUD plus the fired-alert feed and acknowledgement. */
-  alerts: {
-    /** GET /api/alerts - fired-alert feed, newest first. */
-    list: (params?: { unacked?: boolean; limit?: number; offset?: number }) => {
-      const qs = new URLSearchParams();
-      if (params?.unacked) qs.set("unacked", "true");
-      if (params?.limit) qs.set("limit", String(params.limit));
-      if (params?.offset) qs.set("offset", String(params.offset));
-      const q = qs.toString();
-      return request<{
-        alerts: AlertEvent[];
-        total: number;
-        unacked: number;
-        limit: number;
-        offset: number;
-      }>(`/alerts${q ? `?${q}` : ""}`);
-    },
-    /** POST /api/alerts/:id/ack - acknowledge a single fired alert. */
-    ack: (id: number) => request<{ alert: AlertEvent }>(`/alerts/${id}/ack`, { method: "POST" }),
-    /** POST /api/alerts/ack-all - acknowledge every unacked alert at once. */
-    ackAll: () =>
-      request<{ ok: true; acknowledged: number }>("/alerts/ack-all", { method: "POST" }),
-    /** CRUD for the alert rule definitions themselves (not the fired events). */
-    rules: {
-      list: () => request<{ rules: AlertRule[] }>("/alerts/rules"),
-      create: (rule: {
-        name: string;
-        rule_type: AlertRule["rule_type"];
-        config: AlertRule["config"];
-        enabled?: boolean;
-        cooldown_seconds?: number;
-      }) =>
-        request<{ rule: AlertRule }>("/alerts/rules", {
-          method: "POST",
-          body: JSON.stringify(rule),
-        }),
-      update: (
-        id: string,
-        patch: Partial<Pick<AlertRule, "name" | "config" | "enabled" | "cooldown_seconds">>
-      ) =>
-        request<{ rule: AlertRule }>(`/alerts/rules/${encodeURIComponent(id)}`, {
-          method: "PATCH",
-          body: JSON.stringify(patch),
-        }),
-      remove: (id: string) =>
-        request<{ ok: true }>(`/alerts/rules/${encodeURIComponent(id)}`, { method: "DELETE" }),
-    },
-  },
 
-  /** Outbound webhook target CRUD, provider metadata, test sends, and the
-   *  per-target delivery log. */
-  webhooks: {
-    /** GET /api/webhooks - configured targets (secrets/URLs redacted). */
-    list: () => request<{ targets: WebhookTarget[] }>("/webhooks"),
-    /** GET /api/webhooks/providers - supported provider types and their
-     *  form-field schemas, for the "Add webhook" dialog. */
-    providers: () => request<{ providers: WebhookProvider[] }>("/webhooks/providers"),
-    /** POST /api/webhooks - create a new target. */
-    create: (target: {
-      name: string;
-      type: WebhookType;
-      url?: string;
-      enabled?: boolean;
-      secret?: string;
-      headers?: Record<string, string>;
-      config?: Record<string, string>;
-      rule_ids?: string[];
-    }) =>
-      request<{ target: WebhookTarget }>("/webhooks", {
-        method: "POST",
-        body: JSON.stringify(target),
-      }),
-    update: (
-      id: string,
-      patch: {
-        name?: string;
-        url?: string;
-        enabled?: boolean;
-        secret?: string | null;
-        headers?: Record<string, string>;
-        config?: Record<string, string>;
-        rule_ids?: string[];
-      }
-    ) =>
-      request<{ target: WebhookTarget }>(`/webhooks/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        body: JSON.stringify(patch),
-      }),
-    /** DELETE /api/webhooks/:id - remove a target. */
-    remove: (id: string) =>
-      request<{ ok: true }>(`/webhooks/${encodeURIComponent(id)}`, { method: "DELETE" }),
-    /** POST /api/webhooks/:id/test - send a synchronous test payload; not
-     *  recorded in the delivery log. */
-    test: (id: string) =>
-      request<WebhookTestResult>(`/webhooks/${encodeURIComponent(id)}/test`, { method: "POST" }),
-    /** GET /api/webhooks/:id/deliveries - paginated delivery history for one target. */
-    deliveries: (id: string, params?: { limit?: number; offset?: number }) => {
-      const qs = new URLSearchParams();
-      if (params?.limit) qs.set("limit", String(params.limit));
-      if (params?.offset) qs.set("offset", String(params.offset));
-      const q = qs.toString();
-      return request<{ deliveries: WebhookDelivery[]; limit: number; offset: number }>(
-        `/webhooks/${encodeURIComponent(id)}/deliveries${q ? `?${q}` : ""}`
-      );
-    },
-  },
 };
-
-/** Result of a transcript import run - returned by `api.import.rescan`,
- *  `scanPath`, and `upload`, and mirrored by the final `import.progress`
- *  WebSocket message (`phase: "complete"`). */
-export interface ImportResult {
-  ok: boolean;
-  /** Which import flow produced this result. */
-  source: "default" | "path" | "upload";
-  /** Directory that was scanned; present for `source === "path"`. */
-  path?: string;
-  /** New session/event rows created. */
-  imported: number;
-  /** Entries already present in the DB, left untouched. */
-  skipped: number;
-  /** Existing rows updated with data that was missing (e.g. late token usage). */
-  backfilled?: number;
-  /** Count of files/entries that failed to parse or import. */
-  errors: number;
-  /** Distinct session ids encountered during the scan. */
-  sessions_seen?: number;
-  /** Project directories/JSONL files scanned (default/path import). */
-  files_scanned?: number;
-  /** Files actually received in the multipart request (upload import). */
-  files_received?: number;
-  /** Total transcript entries successfully parsed. */
-  entries_extracted?: number;
-  /** Entries skipped during parsing (e.g. malformed lines). */
-  entries_skipped?: number;
-}

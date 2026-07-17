@@ -131,26 +131,8 @@ router.post("/clear-data", (_req, res) => {
   db.prepare("DELETE FROM events").run();
   db.prepare("DELETE FROM agents").run();
   db.prepare("DELETE FROM sessions").run();
-  // Alert *rules* survive: they're user configuration.
-  db.prepare("DELETE FROM alert_events").run();
-  // Webhook *targets* survive, like alert rules.
-  db.prepare("DELETE FROM webhook_deliveries").run();
   db.pragma("foreign_keys = ON");
   res.json({ ok: true, cleared: counts });
-});
-
-// POST /api/settings/reimport — re-import legacy sessions from ~/.claude/
-router.post("/reimport", async (_req, res) => {
-  try {
-    const { importAllSessions } = require("../../scripts/import-history");
-    const dbModule = require("../db");
-    const result = await importAllSessions(dbModule);
-    res.json({ ok: true, ...result });
-  } catch (err) {
-    res.status(500).json({
-      error: { code: "IMPORT_FAILED", message: err.message },
-    });
-  }
 });
 
 // POST /api/settings/reinstall-hooks — reinstall Claude Code hooks

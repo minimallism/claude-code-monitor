@@ -1,6 +1,6 @@
 /**
  * @file Settings.tsx
- * @description Provides a settings page for managing notification preferences, system information, data, hooks, and webhook channels with real-time updates and actionable controls.
+ * @description Provides a settings page for managing notification preferences, system information, data, and hooks with real-time updates and actionable controls.
 
  */
 
@@ -32,7 +32,6 @@ import {
   Layers,
   Coins,
   Settings as SettingsIcon,
-  History,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -40,9 +39,7 @@ import { api } from "../lib/api";
 import { eventBus } from "../lib/eventBus";
 import { fmt, getCurrentLocale } from "../lib/format";
 import { Tip } from "../components/Tip";
-import { ImportHistory } from "../components/ImportHistory";
 import { Skeleton } from "../components/Skeleton";
-import { AlertsNotifications } from "../components/AlertsNotifications";
 import type { WSMessage } from "../lib/types";
 
 // In-page navigation for the (dense) Settings screen. Each entry maps to a
@@ -54,9 +51,7 @@ const SETTINGS_SECTIONS: {
   Icon: typeof Plug;
 }[] = [
   { id: "hooks", labelKey: "hooks.title", Icon: Plug },
-  { id: "import", labelKey: "import.title", fallback: "Import", Icon: History },
   { id: "notifications", labelKey: "notifications.title", Icon: Bell },
-  { id: "alerts", labelKey: "alertsHub.title", Icon: BellRing },
   { id: "data", labelKey: "data.title", Icon: Database },
 ];
 
@@ -563,11 +558,6 @@ export function Settings() {
         </div>
       </section>
 
-      {/* ─── IMPORT HISTORY ─── */}
-      <section id="import" className="scroll-mt-24">
-        <ImportHistory />
-      </section>
-
       {/* ─── NOTIFICATIONS ─── */}
       <section id="notifications" className="scroll-mt-24">
         <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2 mb-1">
@@ -704,16 +694,6 @@ export function Settings() {
             </div>
           )}
         </div>
-      </section>
-
-      {/* ─── ALERTS ─── */}
-      <section id="alerts" className="scroll-mt-24">
-        <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2 mb-1">
-          <BellRing className="w-4 h-4 text-gray-500" />
-          {t("alertsHub.title")}
-        </h3>
-        <p className="text-xs text-gray-500 mb-4">{t("alertsHub.description")}</p>
-        <AlertsNotifications />
       </section>
 
       {/* ─── DATA MANAGEMENT ─── */}

@@ -314,246 +314,8 @@ export interface CostResult {
   unpriced_models?: UnpricedModel[];
 }
 
-/** Payload of the `import.progress` WebSocket message, streamed while a
- *  transcript import (default scan, path scan, or file upload) is running. */
-export interface ImportProgressMessage {
-  /** Correlates progress events to one import run; absent on terminal states
-   *  emitted without a tracked run. */
-  importId?: string;
-  /** Import lifecycle stage; "extract_error" is a non-fatal per-file failure
-   *  during "extract" that doesn't abort the overall run. */
-  phase: "start" | "scan" | "extract" | "parse" | "complete" | "error" | "extract_error";
-  /** Which import flow triggered this run. */
-  source?: "default" | "path" | "upload";
-  /** Items processed so far, for a determinate progress bar. */
-  processed?: number;
-  /** Total items expected, once known (may be absent during "scan"). */
-  total?: number;
-  /** Short label for what's currently being processed (e.g. a file name). */
-  current?: string;
-  /** Filesystem path being scanned/imported, when applicable. */
-  path?: string;
-  /** Human-readable failure message; present on "error"/"extract_error". */
-  error?: string;
-  /** Running tallies (e.g. imported/skipped/errors) keyed by counter name. */
-  counters?: Record<string, number>;
-}
 
-// ── Alerting ──
 
-/** Kind of condition an {@link AlertRule} evaluates. "event_pattern" and
- *  "token_threshold" are checked on every hook ingest; "inactivity" and
- *  "status_duration" are checked on a periodic server-side sweep. */
-export type AlertRuleType = "event_pattern" | "inactivity" | "status_duration" | "token_threshold";
-
-/**
- * Rule-type-specific settings for an {@link AlertRule}. Which fields apply
- * depends on `rule_type` (validated server-side by `validateRuleConfig` in
- * server/lib/alerts.js) - the others are simply absent/ignored:
- *  - event_pattern: `event_type`/`tool_name`/`summary_contains` (at least one
- *    required) plus `count`/`window_minutes` for "N times in M minutes".
- *  - inactivity: `minutes` of session silence before firing.
- *  - status_duration: `status` held continuously for `minutes`.
- *  - token_threshold: cumulative `total_tokens` for a session.
- */
-export interface AlertRuleConfig {
-  /** event_pattern: exact `DashboardEvent.event_type` to match. */
-  event_type?: string;
-  /** event_pattern: exact `DashboardEvent.tool_name` to match. */
-  tool_name?: string;
-  /** event_pattern: substring the event's `summary` must contain. */
-  summary_contains?: string;
-  /** event_pattern: number of matches required within `window_minutes`
-   *  (default 1, meaning "fire on the first match"). */
-  count?: number;
-  /** event_pattern: sliding window (minutes) `count` is measured over;
-   *  only meaningful when `count` > 1 (default 5). */
-  window_minutes?: number;
-  /** inactivity: minutes of silence before firing. status_duration: minutes
-   *  `status` must be held continuously before firing. */
-  minutes?: number;
-  /** status_duration: the agent status to watch for. */
-  status?: "working" | "waiting";
-  /** token_threshold: cumulative token count that triggers the alert. */
-  total_tokens?: number;
-}
-
-/** A user-defined alert rule from GET/POST/PATCH /api/alerts/rules. */
-export interface AlertRule {
-  id: string;
-  name: string;
-  rule_type: AlertRuleType;
-  config: AlertRuleConfig;
-  /** Whether the rule is evaluated at all; disabled rules never fire. */
-  enabled: boolean;
-  /** Minimum seconds between two firings of this rule for the same
-   *  session/agent scope, to avoid spamming on repeated matches. */
-  cooldown_seconds: number;
-  created_at: string;
-  updated_at: string;
-}
-
-/** One firing of an {@link AlertRule}, from GET /api/alerts; pushed live via
- *  the `alert_triggered` (new) / `alert_updated` (acknowledged) WS messages. */
-export interface AlertEvent {
-  id: number;
-  /** Rule that fired (foreign key into `AlertRule.id`). */
-  rule_id: string;
-  /** Denormalized copy of the rule's name at fire time, for display even if
-   *  the rule is later renamed or deleted. */
-  rule_name: string;
-  rule_type: AlertRuleType;
-  /** Session the alert pertains to; null for rules with no session scope. */
-  session_id: string | null;
-  /** Agent the alert pertains to; null when not agent-specific. */
-  agent_id: string | null;
-  /** Human-readable description of what triggered the alert. */
-  message: string;
-  /** Opaque JSON string with extra context (matched event, thresholds); may
-   *  be null. Parse before use. */
-  details: string | null;
-  /** ISO timestamp the alert fired. */
-  triggered_at: string;
-  /** ISO timestamp the user acknowledged it; null while unacknowledged. */
-  acknowledged_at: string | null;
-}
-
-// ── Webhooks ──
-
-/** Supported outbound webhook provider ids, from GET /api/webhooks/providers.
- *  "generic" is a bare HTTP POST for anything not natively supported. */
-export type WebhookType =
-  | "slack"
-  | "discord"
-  | "teams"
-  | "google_chat"
-  | "mattermost"
-  | "rocketchat"
-  | "telegram"
-  | "pagerduty"
-  | "opsgenie"
-  | "splunk_oncall"
-  | "zapier"
-  | "make"
-  | "n8n"
-  | "pipedream"
-  | "generic";
-
-/** One provider-specific config field the "Add webhook" form should render
- *  for a given {@link WebhookProvider} (e.g. Telegram's chat_id, PagerDuty's
- *  routing_key). Declared server-side in server/lib/webhook-providers.js. */
-export interface WebhookProviderField {
-  /** Key this value is stored/sent under in `WebhookTarget.config`. */
-  key: string;
-  /** Form label. */
-  label: string;
-  /** Whether the value should be masked in the UI and redacted by the API. */
-  secret: boolean;
-  /** Whether the target can't be saved without this field. */
-  required: boolean;
-  /** Render as a free-text input or a fixed dropdown (`options`). */
-  type: "string" | "enum";
-  /** Choices for `type === "enum"`; null otherwise. */
-  options: string[] | null;
-  /** Pre-filled value for a new target; null when there's no sensible default. */
-  default: string | null;
-}
-
-/** Redacted, serializable metadata for one webhook provider, from GET
- *  /api/webhooks/providers - drives the "Add webhook" form without exposing
- *  server-internal formatter/auth logic. */
-export interface WebhookProvider {
-  type: WebhookType;
-  label: string;
-  /** "chat" (Slack/Discord/Teams-style), "api" (PagerDuty/Opsgenie/Splunk),
-   *  or "generic" (bare POST) - determines which extra options apply below. */
-  family: "chat" | "api" | "generic";
-  /** Whether the user must supply a URL (false when the URL is derived from
-   *  `config`, like Telegram's bot token, or a fixed default is used). */
-  url_required: boolean;
-  /** Whether the provider ships a built-in default URL. */
-  has_default_url: boolean;
-  /** Whether the URL is computed from `config` rather than entered directly. */
-  derives_url: boolean;
-  /** Whether a plain http:// URL is accepted (some local/dev integrations). */
-  allow_http: boolean;
-  /** Placeholder/help text shown under the URL field; null if none. */
-  url_hint: string | null;
-  /** Whether this provider's requests can be HMAC-signed with a shared secret
-   *  (generic family only). */
-  supports_secret: boolean;
-  /** Whether custom HTTP headers can be attached (generic family only). */
-  supports_headers: boolean;
-  fields: WebhookProviderField[];
-}
-
-/** Compact summary of a target's most recent delivery attempt, embedded in
- *  {@link WebhookTarget.last_delivery} for the targets list view. */
-export interface WebhookDeliverySummary {
-  status: "success" | "failed";
-  /** HTTP status code returned by the endpoint; null on a transport-level
-   *  failure (DNS, timeout, connection refused) before any response arrived. */
-  status_code: number | null;
-  /** Number of send attempts made (including retries) for this delivery. */
-  attempts: number;
-  /** Failure reason when `status` is "failed"; null on success. */
-  error: string | null;
-  created_at: string;
-}
-
-/** A configured outbound webhook destination, from GET/POST/PATCH /api/webhooks.
- *  Secrets are never returned by the API - `url_preview` masks the URL and
- *  `headers`/`config` mask any field flagged `secret` in the provider schema. */
-export interface WebhookTarget {
-  id: string;
-  /** User-assigned label for this target. */
-  name: string;
-  type: WebhookType;
-  /** Whether alerts matching `rule_ids` are actually delivered here. */
-  enabled: boolean;
-  /** Masked: host + last 4 chars. The full URL is never returned by the API. */
-  url_preview: string;
-  /** Whether a signing secret is configured (its value is never returned). */
-  has_secret: boolean;
-  /** Generic targets only; values are masked ("••••"). */
-  headers: Record<string, string> | null;
-  /** Provider config (Telegram chat_id, PagerDuty routing_key, …); secret values masked. */
-  config: Record<string, string> | null;
-  /** Rule ids this target is scoped to; null = all rules. */
-  rule_ids: string[] | null;
-  created_at: string;
-  updated_at: string;
-  /** Outcome of the most recent delivery attempt; null if never delivered. */
-  last_delivery: WebhookDeliverySummary | null;
-}
-
-/** One row of a target's delivery log, from GET /api/webhooks/:id/deliveries. */
-export interface WebhookDelivery {
-  id: number;
-  /** Owning target's id (foreign key into `WebhookTarget.id`). */
-  target_id: string;
-  /** Denormalized target name at delivery time, for display after renames/deletes. */
-  target_name: string;
-  target_type: WebhookType;
-  /** The `AlertEvent.id` that triggered this delivery; null for manual test sends. */
-  alert_id: number | null;
-  status: "success" | "failed";
-  status_code: number | null;
-  attempts: number;
-  error: string | null;
-  created_at: string;
-}
-
-/** Result of POST /api/webhooks/:id/test - a synchronous one-shot delivery
- *  probe used by the "Send test" button, not persisted to the delivery log. */
-export interface WebhookTestResult {
-  /** Whether the endpoint accepted the test payload (2xx response). */
-  ok: boolean;
-  /** HTTP status code returned; null on a transport-level failure. */
-  status: number | null;
-  attempts: number;
-  error: string | null;
-}
 
 /**
  * Envelope for every message the server pushes over the dashboard WebSocket
@@ -563,24 +325,18 @@ export interface WebhookTestResult {
 export interface WSMessage {
   /** Discriminant selecting which member of the `data` union applies:
    *  session_created/updated → Session; agent_created/updated → Agent;
-   *  new_event → DashboardEvent; import.progress → ImportProgressMessage;
-   *  alert_triggered/alert_updated → AlertEvent; workflow_upserted → WorkflowRun. */
+   *  new_event → DashboardEvent; workflow_upserted → WorkflowRun. */
   type:
     | "session_created"
     | "session_updated"
     | "agent_created"
     | "agent_updated"
     | "new_event"
-    | "import.progress"
-    | "alert_triggered"
-    | "alert_updated"
     | "workflow_upserted";
   data:
     | Session
     | Agent
     | DashboardEvent
-    | ImportProgressMessage
-    | AlertEvent
     | WorkflowRun;
   /** ISO timestamp the server broadcast this message (not necessarily the
    *  same instant the underlying event occurred). */

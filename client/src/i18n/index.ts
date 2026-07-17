@@ -24,8 +24,6 @@ import settings_en from "./locales/en/settings.json";
 import settings_zh from "./locales/zh/settings.json";
 import errors_en from "./locales/en/errors.json";
 import errors_zh from "./locales/zh/errors.json";
-import alerts_en from "./locales/en/alerts.json";
-import alerts_zh from "./locales/zh/alerts.json";
 import splash_en from "./locales/en/splash.json";
 import splash_zh from "./locales/zh/splash.json";
 
@@ -43,7 +41,6 @@ i18n
         workflows: workflows_en,
         settings: settings_en,
         errors: errors_en,
-        alerts: alerts_en,
         splash: splash_en,
       },
       zh: {
@@ -55,7 +52,6 @@ i18n
         workflows: workflows_zh,
         settings: settings_zh,
         errors: errors_zh,
-        alerts: alerts_zh,
         splash: splash_zh,
       },
     },
@@ -71,7 +67,6 @@ i18n
       "workflows",
       "settings",
       "errors",
-      "alerts",
       "splash",
     ],
     defaultNS: "common",
