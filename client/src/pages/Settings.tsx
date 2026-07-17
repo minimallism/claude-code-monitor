@@ -4,7 +4,7 @@
 
  */
 
-import { useEffect, useState, useCallback, useRef, useSyncExternalStore } from "react";
+import { useEffect, useState, useCallback, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import {
   RefreshCw,
@@ -15,15 +15,12 @@ import {
   RotateCcw,
   CheckCircle,
   XCircle,
-  FileDown,
   Eraser,
   Activity,
   Users,
   Layers,
   Coins,
   Settings as SettingsIcon,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { eventBus } from "../lib/eventBus";
@@ -32,17 +29,6 @@ import { Tip } from "../components/Tip";
 import { Skeleton } from "../components/Skeleton";
 import type { WSMessage } from "../lib/types";
 
-// In-page navigation for the (dense) Settings screen. Each entry maps to a
-// `<section id>` rendered below; the TOC scroll-spies the active one.
-const SETTINGS_SECTIONS: {
-  id: string;
-  labelKey: string;
-  fallback?: string;
-  Icon: typeof Plug;
-}[] = [
-  { id: "hooks", labelKey: "hooks.title", Icon: Plug },
-  { id: "data", labelKey: "data.title", Icon: Database },
-];
 
 
 // ─── Helpers ───
@@ -135,62 +121,7 @@ export function Settings() {
   const [confirmAction, setConfirmAction] = useState<string | null>(null);
   const [abandonHours, setAbandonHours] = useState("24");
   const [purgeDays, setPurgeDays] = useState("90");
-  const [activeSection, setActiveSection] = useState<string>("hooks");
-  const tocRef = useRef<HTMLDivElement | null>(null);
-  const [tocOverflow, setTocOverflow] = useState({ left: false, right: false });
-
   const wsConnected = useSyncExternalStore(eventBus.onConnection, () => eventBus.connected);
-
-  // Scroll-spy: highlight the TOC entry for the section nearest the top.
-  useEffect(() => {
-    if (loading) return;
-    const els = SETTINGS_SECTIONS.map((s) => document.getElementById(s.id)).filter(
-      (e): e is HTMLElement => !!e
-    );
-    if (els.length === 0) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible[0]) setActiveSection(visible[0].target.id);
-      },
-      { rootMargin: "-88px 0px -65% 0px", threshold: 0 }
-    );
-    els.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-  }, [loading]);
-
-  // Show chevron affordances on the TOC when its chips overflow horizontally.
-  const recomputeTocOverflow = useCallback(() => {
-    const el = tocRef.current;
-    if (!el) return;
-    const left = el.scrollLeft > 1;
-    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
-    setTocOverflow((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
-  }, []);
-
-  useEffect(() => {
-    if (loading) return;
-    recomputeTocOverflow();
-    const el = tocRef.current;
-    if (!el) return;
-    const onScroll = () => recomputeTocOverflow();
-    el.addEventListener("scroll", onScroll, { passive: true });
-    const ro =
-      typeof ResizeObserver !== "undefined" ? new ResizeObserver(recomputeTocOverflow) : null;
-    ro?.observe(el);
-    window.addEventListener("resize", recomputeTocOverflow);
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      ro?.disconnect();
-      window.removeEventListener("resize", recomputeTocOverflow);
-    };
-  }, [loading, recomputeTocOverflow]);
-
-  const scrollTocBy = useCallback((delta: number) => {
-    tocRef.current?.scrollBy({ left: delta, behavior: "smooth" });
-  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -367,71 +298,11 @@ export function Settings() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <a
-            href={api.settings.exportData()}
-            download
-            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-border text-gray-400 hover:text-gray-200 hover:border-gray-500 transition-colors"
-          >
-            <FileDown className="w-3.5 h-3.5" />
-            {t("exportData")}
-          </a>
           <button onClick={load} className="btn-ghost">
             <RefreshCw className="w-4 h-4" /> {t("common:refresh")}
           </button>
         </div>
       </div>
-
-      {/* In-page section navigation - Settings is dense, so this TOC jumps to
-          and scroll-spies each section. */}
-      <nav className="sticky top-0 z-20 -mx-1 !mt-2 px-1 py-2 bg-surface-0/85 backdrop-blur border-b border-border/60 flex items-center gap-1.5">
-        <span className="flex-shrink-0 pl-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-          {t("jumpTo", "Jump to")}
-        </span>
-        {tocOverflow.left && (
-          <button
-            type="button"
-            onClick={() => scrollTocBy(-180)}
-            aria-label="Scroll left"
-            className="flex-shrink-0 flex items-center justify-center w-6 h-7 rounded-md border border-border text-gray-400 hover:text-gray-200 hover:bg-surface-3 transition-colors"
-          >
-            <ChevronLeft className="w-3.5 h-3.5" />
-          </button>
-        )}
-        <div ref={tocRef} className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1">
-          {SETTINGS_SECTIONS.map(({ id, labelKey, fallback, Icon }) => {
-            const active = activeSection === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() =>
-                  document
-                    .getElementById(id)
-                    ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                }
-                className={`inline-flex items-center gap-1.5 text-xs whitespace-nowrap px-2.5 py-1.5 rounded-lg border transition-colors flex-shrink-0 ${
-                  active
-                    ? "bg-accent/15 border-accent/30 text-accent"
-                    : "border-border text-gray-400 hover:text-gray-200 hover:bg-surface-3"
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {t(labelKey, fallback ?? "")}
-              </button>
-            );
-          })}
-        </div>
-        {tocOverflow.right && (
-          <button
-            type="button"
-            onClick={() => scrollTocBy(180)}
-            aria-label="Scroll right"
-            className="flex-shrink-0 flex items-center justify-center w-6 h-7 rounded-md border border-border text-gray-400 hover:text-gray-200 hover:bg-surface-3 transition-colors"
-          >
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </nav>
 
 
 

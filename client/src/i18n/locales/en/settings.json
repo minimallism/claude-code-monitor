@@ -1,7 +1,6 @@
 {
   "title": "Settings",
   "subtitle": "Manage hooks and data",
-  "exportData": "Export Data",
   "acrossSessions": "Across all tracked sessions",
   "basedOnUsage": "Based on per-model token usage",
 
@@ -50,7 +49,5 @@
     "failedDelete": "Failed to delete",
     "unknownError": "Unknown",
     "actionFailed": "Error: {{message}}"
-  },
-
-  "jumpTo": "Jump to"
+  }
 }

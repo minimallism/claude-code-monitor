@@ -1,5 +1,5 @@
 /**
- * @file Express router for settings-related endpoints, providing system info, database statistics, hook status, and operations to clear data, re-import sessions, reinstall hooks, export data, and perform cleanup of stale sessions. This allows the frontend to manage and maintain the agent monitoring system effectively.
+ * @file Express router for settings-related endpoints, providing system info, database statistics, hook status, and operations to clear data, re-import sessions, reinstall hooks, and perform cleanup of stale sessions. This allows the frontend to manage and maintain the agent monitoring system effectively.
 
  */
 
@@ -147,29 +147,6 @@ router.post("/reinstall-hooks", (_req, res) => {
       error: { code: "HOOK_INSTALL_FAILED", message: err.message },
     });
   }
-});
-
-// GET /api/settings/export — export all data as JSON
-router.get("/export", (_req, res) => {
-  const sessions = db.prepare("SELECT * FROM sessions ORDER BY started_at DESC").all();
-  const agents = db.prepare("SELECT * FROM agents ORDER BY started_at DESC").all();
-  const events = db.prepare("SELECT * FROM events ORDER BY created_at DESC").all();
-  const tokenUsage = db.prepare("SELECT * FROM token_usage").all();
-  const pricing = stmts.listPricing.all();
-
-  res.setHeader("Content-Type", "application/json");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="agent-monitor-export-${new Date().toISOString().slice(0, 10)}.json"`
-  );
-  res.json({
-    exported_at: new Date().toISOString(),
-    sessions,
-    agents,
-    events,
-    token_usage: tokenUsage,
-    model_pricing: pricing,
-  });
 });
 
 // POST /api/settings/cleanup — abandon stale sessions, purge old data

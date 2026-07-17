@@ -1,7 +1,6 @@
 {
   "title": "设置",
   "subtitle": "管理钩子和数据",
-  "exportData": "导出数据",
   "acrossSessions": "跨所有追踪的会话",
   "basedOnUsage": "基于每模型 Token 使用量",
 
@@ -50,7 +49,5 @@
     "failedDelete": "删除失败",
     "unknownError": "未知错误",
     "actionFailed": "错误：{{message}}"
-  },
-
-  "jumpTo": "跳转到"
+  }
 }

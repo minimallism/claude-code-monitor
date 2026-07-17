@@ -270,9 +270,6 @@ export const api = {
         { method: "POST" }
       ),
 
-    /** Direct download URL for GET /api/settings/export (a full DB dump);
-     *  not fetched via {@link request} since it's used as an `<a href>`. */
-    exportData: () => `${BASE}/settings/export`,
     /** POST /api/settings/cleanup - DESTRUCTIVE: marks sessions idle longer
      *  than `abandon_hours` as "abandoned", and purges rows older than
      *  `purge_days`. Returns counts of what was abandoned/purged. */
