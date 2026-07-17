@@ -1,7 +1,6 @@
 {
   "title": "Analytics",
   "subtitle": "Real-time monitoring and analytics for Claude Code sessions",
-  "export": "Export",
   "totalSessions": "Total Sessions",
   "totalAgents": "Total Agents",
   "totalTokens": "Total Tokens",

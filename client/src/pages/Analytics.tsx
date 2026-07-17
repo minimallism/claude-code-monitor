@@ -8,7 +8,6 @@ import { useEffect, useState, useCallback, useMemo, useSyncExternalStore } from 
 import { useTranslation } from "react-i18next";
 import {
   RefreshCw,
-  Download,
   Clock,
   BarChart3,
   Plug,
@@ -502,17 +501,6 @@ export function Analytics() {
     });
   }, [load]);
 
-  function handleExport() {
-    if (!data) return;
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `analytics-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
   // Format a local Date object as a YYYY-MM-DD string for heatmap lookups
   function localDateStr(d: Date): string {
     const y = d.getFullYear();
@@ -698,10 +686,6 @@ export function Analytics() {
           <button onClick={load} className="btn-ghost" disabled={loading}>
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             {t("common:refresh")}
-          </button>
-          <button onClick={handleExport} className="btn-ghost" disabled={!data}>
-            <Download className="w-4 h-4" />
-            {t("export")}
           </button>
         </div>
       </div>

@@ -1,7 +1,6 @@
 {
   "title": "分析",
   "subtitle": "Claude Code 会话的实时监控和分析",
-  "export": "导出",
   "totalSessions": "总会话数",
   "totalAgents": "总Agent数",
   "totalTokens": "总 Token 数",
