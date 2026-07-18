@@ -1,18 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * Clears all sessions, agents, events, and token usage from the database.
- * Destructive — requires explicit confirmation.
- *
- * Usage:
- *   node scripts/clear-data.js --yes              Wipe everything (irrevocable)
- *   node scripts/clear-data.js --yes --backup     Snapshot DB to data/backups/ first
- *   node scripts/clear-data.js --demo-only --yes  Delete only seed-fixture rows
- *   node scripts/clear-data.js                    Dry run — print counts, do nothing
- *
-
- */
-
 let Database;
 try {
   Database = require("better-sqlite3");
@@ -36,8 +23,6 @@ const BACKUP = args.has("--backup");
 const DEMO_ONLY = args.has("--demo-only");
 const DRY_RUN = args.has("--dry-run") || !CONFIRMED;
 
-// Mirror server/db.js resolution so we clear the same shared database the
-// servers actually use (DASHBOARD_DB_PATH override → shared data dir).
 const DB_PATH = process.env.DASHBOARD_DB_PATH || path.join(getDataDir(), "dashboard.db");
 
 if (!fs.existsSync(DB_PATH)) {
@@ -85,20 +70,18 @@ if (DRY_RUN) {
   process.exit(0);
 }
 
-// Confirmed path — actually delete.
-
 if (BACKUP) {
   const backupDir = path.join(path.dirname(DB_PATH), "backups");
   fs.mkdirSync(backupDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const backupPath = path.join(backupDir, `dashboard.${stamp}.db`);
-  // Use SQLite VACUUM INTO for a consistent snapshot
+  
   db.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
   console.log(`📦 Backup written: ${backupPath}`);
 }
 
 if (DEMO_ONLY) {
-  // Delete only fixture rows. These IDs are stable across seed runs.
+  
   const FIXTURE_SESSION_IDS = [
     "demo-solo-0001-0001-0001-000000000001",
     "demo-nested-0001-0001-0001-000000000001",

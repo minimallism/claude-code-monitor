@@ -1,12 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * Installs Claude Code hooks that forward events to the Agent Dashboard.
- * Modifies ~/.claude/settings.json to add hook entries.
- *
-
- */
-
 const fs = require("fs");
 const path = require("path");
 
@@ -18,14 +11,8 @@ function envFlag(name) {
   return ["1", "true", "yes", "on"].includes(String(process.env[name] || "").toLowerCase());
 }
 
-// Hook types to install. Some support matchers, some don't.
 const HOOKS_WITH_MATCHER = ["PreToolUse", "PostToolUse", "Stop", "SubagentStop", "Notification"];
-// UserPromptSubmit fires the instant the user hits enter — the only reliable
-// signal that the user has resumed for *text-only* turns (no PreToolUse will
-// fire until Claude calls a tool, which never happens for plain-text replies).
-// Without it the Waiting badge persists through the entire generation of a
-// text response. SessionStart / SessionEnd / UserPromptSubmit don't take
-// tool-name matchers, hence the separate list.
+
 const HOOKS_WITHOUT_MATCHER = ["SessionStart", "SessionEnd", "UserPromptSubmit"];
 const HOOK_TYPES = [...HOOKS_WITH_MATCHER, ...HOOKS_WITHOUT_MATCHER];
 
@@ -45,7 +32,7 @@ function makeHookEntry(hookType) {
 }
 
 function isOurEntry(entry) {
-  // Matches old format (entry.command) and new format (entry.hooks[].command)
+  
   if (entry.command && entry.command.includes("hook-handler.js")) return true;
   if (Array.isArray(entry.hooks)) {
     return entry.hooks.some((h) => h.command && h.command.includes("hook-handler.js"));
@@ -68,7 +55,7 @@ function isInsideContainer() {
       }
     }
   } catch {
-    /* ignore — not running in container */
+    
   }
   return false;
 }
@@ -120,7 +107,7 @@ function installHooks(silent = false) {
 }
 
 if (require.main === module) {
-  // Non-zero exit on refusal/failure so CI and shell users notice it.
+  
   if (!installHooks(false)) process.exitCode = 1;
 }
 

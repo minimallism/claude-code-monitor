@@ -1,35 +1,8 @@
 #!/usr/bin/env node
 
-/**
- * Seeds the database with sample data for development and demo purposes.
- *
- * Default behavior is ADDITIVE and IDEMPOTENT:
- *   node scripts/seed.js              Insert the two stable test fixtures
- *                                     (single-agent + deeply-nested). Re-runs
- *                                     are no-ops if fixtures already exist.
- *
- *   node scripts/seed.js --full       Also insert the random/demo sessions
- *                                     (old behavior; produces unbounded data
- *                                     on repeat runs — use intentionally).
- *
- *   node scripts/seed.js --reset      Remove existing fixture rows before
- *                                     re-inserting them (e.g. to refresh
- *                                     timestamps). Only deletes fixture
- *                                     sessions, never user data.
- *
- * This script NEVER deletes non-fixture data. To wipe the DB, use
- * scripts/clear-data.js (which now requires --yes).
- *
-
- */
-
 const { v4: uuidv4 } = require("uuid");
 const { db, stmts } = require("../server/db");
 
-// ── Stable fixture IDs ─────────────────────────────────────────────────────
-// These IDs are intentionally non-UUID-shaped strings prefixed with `demo-`
-// so they are easy to recognize, never collide with real Claude Code session
-// UUIDs, and stay stable across seed runs.
 const FIXTURES = {
   solo: {
     sessionId: "demo-solo-0001-0001-0001-000000000001",
@@ -137,12 +110,11 @@ function deleteFixtureRows() {
   tx();
 }
 
-// ── Stable fixtures (the two test cases for AgentCard click behavior) ──────
 function seedFixtures() {
   const result = { inserted: [], skipped: [] };
 
   const tx = db.transaction(() => {
-    // 1. Single-agent session (no subagents — leaf-only; click should NAVIGATE)
+    
     if (sessionExists(FIXTURES.solo.sessionId)) {
       result.skipped.push("Single Agent: Quick Hotfix");
     } else {
@@ -172,7 +144,7 @@ function seedFixtures() {
       result.inserted.push("Single Agent: Quick Hotfix");
     }
 
-    // 2. Deeply-nested session (depth 4, branching — click PARENT toggles, LEAF navigates)
+    
     if (sessionExists(FIXTURES.nested.sessionId)) {
       result.skipped.push("Deep Nesting: Multi-Agent Research Pipeline");
     } else {
@@ -197,7 +169,7 @@ function seedFixtures() {
         null
       );
 
-      // Depth 1: Main → Codebase Explorer (working)
+      
       stmts.insertAgent.run(
         ids.l1Explorer,
         FIXTURES.nested.sessionId,
@@ -211,7 +183,7 @@ function seedFixtures() {
       );
       db.prepare("UPDATE agents SET current_tool = ? WHERE id = ?").run("Glob", ids.l1Explorer);
 
-      // Depth 2: Explorer → Security Researcher (working)
+      
       stmts.insertAgent.run(
         ids.l2Researcher,
         FIXTURES.nested.sessionId,
@@ -228,7 +200,7 @@ function seedFixtures() {
         ids.l2Researcher
       );
 
-      // Depth 3: Researcher → Test Engineer (working)
+      
       stmts.insertAgent.run(
         ids.l3TestWriter,
         FIXTURES.nested.sessionId,
@@ -242,7 +214,7 @@ function seedFixtures() {
       );
       db.prepare("UPDATE agents SET current_tool = ? WHERE id = ?").run("Write", ids.l3TestWriter);
 
-      // Depth 4: Test Engineer → Test Debugger (deepest leaf)
+      
       stmts.insertAgent.run(
         ids.l4Debugger,
         FIXTURES.nested.sessionId,
@@ -256,7 +228,7 @@ function seedFixtures() {
       );
       db.prepare("UPDATE agents SET current_tool = ? WHERE id = ?").run("Bash", ids.l4Debugger);
 
-      // Depth 2 branch (sibling of Researcher): Code Reviewer (completed leaf)
+      
       stmts.insertAgent.run(
         ids.l2Reviewer,
         FIXTURES.nested.sessionId,
@@ -270,7 +242,7 @@ function seedFixtures() {
       );
       db.prepare("UPDATE agents SET ended_at = ? WHERE id = ?").run(minutesAgo(5), ids.l2Reviewer);
 
-      // Depth 1 sibling: Architecture Planner (completed leaf)
+      
       stmts.insertAgent.run(
         ids.l1Architect,
         FIXTURES.nested.sessionId,
@@ -287,7 +259,7 @@ function seedFixtures() {
         ids.l1Architect
       );
 
-      // Depth 1 sibling: Documentation Writer (working — has its own child)
+      
       stmts.insertAgent.run(
         ids.l1DocWriter,
         FIXTURES.nested.sessionId,
@@ -301,7 +273,7 @@ function seedFixtures() {
       );
       db.prepare("UPDATE agents SET current_tool = ? WHERE id = ?").run("Edit", ids.l1DocWriter);
 
-      // Depth 2: Doc Writer → Example Generator (connected leaf)
+      
       stmts.insertAgent.run(
         ids.l2ExampleGen,
         FIXTURES.nested.sessionId,
@@ -317,7 +289,7 @@ function seedFixtures() {
       result.inserted.push("Deep Nesting: Multi-Agent Research Pipeline (9 agents, depth 4)");
     }
 
-    // Sprinkle a few events on freshly inserted fixtures only
+    
     for (const sid of FIXTURE_SESSION_IDS) {
       const hasEvents =
         db.prepare("SELECT 1 FROM events WHERE session_id = ? LIMIT 1").get(sid) !== undefined;
@@ -348,7 +320,6 @@ function seedFixtures() {
   return result;
 }
 
-// ── Random demo data (old behavior — opt-in with --full) ───────────────────
 function seedFullDemo() {
   console.log("⚠️  --full mode: inserting random demo sessions on top of existing data.");
   console.log("   These get fresh UUIDs each run, so re-runs accumulate. Use intentionally.\n");

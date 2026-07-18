@@ -1,25 +1,15 @@
-/**
- * Remove all English comments from client source files (.ts, .tsx, .css).
- * Character-by-character parser with robust handling of:
- * - Strings ('...', "...", `...`)
- * - Template literal interpolation (${...})
- * - RegExp literals (with context detection)
- * - JSX closing tags (</tag>)
- * - Apostrophes in English text (it's, session's)
- * - All comment types (single-line, block, JSDoc)
- */
 const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..", "client", "src");
 
-function findFiles(dir) {
+function findFiles(dir, extPattern) {
   let results = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules") {
-      results.push(...findFiles(full));
-    } else if (entry.isFile() && /\.(ts|tsx|css)$/i.test(entry.name)) {
+      results.push(...findFiles(full, extPattern));
+    } else if (entry.isFile() && extPattern.test(entry.name)) {
       results.push(full);
     }
   }
@@ -31,7 +21,7 @@ function couldStartRegex(code, i) {
   while (j >= 0 && (code[j] === " " || code[j] === "\t" || code[j] === "\n" || code[j] === "\r")) j--;
   if (j < 0) return true;
   const c = code[j];
-  if (c === "<") return false; // JSX closing tag </tag>
+  if (c === "<") return false; 
   if ("=([{,!&|^~%?:;".includes(c)) return true;
   if (")]}".includes(c)) return false;
   if (/[a-zA-Z0-9_$]/.test(c)) return false;
@@ -61,8 +51,8 @@ function parseRegex(code, i) {
 }
 
 function isApostrophe(code, i) {
-  // If ' is between two ASCII letters (like "it's", "session's"), it's an
-  // apostrophe in English text, not a JS string delimiter.
+  
+  
   if (i <= 0 || i + 1 >= code.length) return false;
   return /[a-zA-Z]/.test(code[i - 1]) && /[a-zA-Z]/.test(code[i + 1]);
 }
@@ -76,7 +66,7 @@ function removeComments(code) {
     const ch = code[i];
     const next = i + 1 < len ? code[i + 1] : "";
 
-    // Single-quoted string (skip apostrophes in English text like "it's")
+    
     if (ch === "'" && !isApostrophe(code, i)) {
       out.push(ch); i++;
       while (i < len) {
@@ -87,7 +77,7 @@ function removeComments(code) {
       continue;
     }
 
-    // Double-quoted string
+    
     if (ch === '"') {
       out.push(ch); i++;
       while (i < len) {
@@ -98,14 +88,14 @@ function removeComments(code) {
       continue;
     }
 
-    // Single-line comment //
+    
     if (ch === "/" && next === "/") {
       while (i < len && code[i] !== "\n") i++;
       if (i < len && code[i] === "\n") { out.push("\n"); i++; }
       continue;
     }
 
-    // Block comment /* */ (including JSDoc)
+    
     if (ch === "/" && next === "*") {
       i += 2;
       while (i < len) {
@@ -118,7 +108,7 @@ function removeComments(code) {
       continue;
     }
 
-    // RegExp literal (after // and /*)
+    
     if (ch === "/" && couldStartRegex(code, i)) {
       const end = parseRegex(code, i);
       out.push(code.slice(i, end));
@@ -126,7 +116,7 @@ function removeComments(code) {
       continue;
     }
 
-    // Template literal (backtick) - after RegExp so backticks in regex are handled
+    
     if (ch === "`") {
       out.push(ch); i++;
       let braceDepth = 0;
@@ -139,7 +129,7 @@ function removeComments(code) {
           out.push("}"); i++; braceDepth--;
         }
         else if (code[i] === "`" && braceDepth === 0) { out.push("`"); i++; break; }
-        // Remove CSS/block comments inside template literals
+        
         else if (code[i] === "/" && i + 1 < len && code[i + 1] === "*" && braceDepth === 0) {
           i += 2;
           while (i < len) {
@@ -165,11 +155,11 @@ function removeComments(code) {
 
 function cleanFile(filePath) {
   const original = fs.readFileSync(filePath, "utf8");
-  const cleaned = removeComments(original);
+  let cleaned = removeComments(original);
   if (original !== cleaned) {
-    // Remove empty JSX expressions {} left from {/* comment */} removal
+    
     cleaned = cleaned.replace(/^[ \t]*\{\}[ \t]*\n/gm, "");
-    // Also handle empty expressions followed by more whitespace
+    
     cleaned = cleaned.replace(/^[ \t]*\{\}[ \t]*\r?\n/gm, "");
     if (original !== cleaned) {
       fs.writeFileSync(filePath, cleaned, "utf8");
@@ -181,8 +171,16 @@ function cleanFile(filePath) {
   return false;
 }
 
-// --- Main ---
-const files = findFiles(ROOT);
+const targetDir = process.argv[2] ? path.resolve(process.argv[2]) : ROOT;
+const extPattern = process.argv[3] ? new RegExp(process.argv[3], "i") : /\.(ts|tsx|css)$/i;
+
+if (!fs.existsSync(targetDir)) {
+  console.error(`Directory not found: ${targetDir}`);
+  process.exit(1);
+}
+
+const files = findFiles(targetDir, extPattern);
+console.log(`Scanning ${targetDir}`);
 console.log(`Found ${files.length} source files`);
 
 let changed = 0;
