@@ -1,8 +1,3 @@
-/**
- * @file Express router for managing agents, providing endpoints to list, retrieve, create, and update agents. It interacts with the database using prepared statements and broadcasts changes to connected WebSocket clients for real-time updates.
-
- */
-
 const { Router } = require("express");
 const { stmts } = require("../db");
 const { broadcast } = require("../websocket");
@@ -26,8 +21,8 @@ router.get("/", (req, res) => {
     rows = stmts.listAgents.all(limit, offset);
   }
 
-  // Attach each agent's OWN cost (from its metadata token buckets) so subagent
-  // cards can show their real cost instead of the session total.
+  
+  
   res.json({ agents: attachAgentCosts(rows), limit, offset });
 });
 

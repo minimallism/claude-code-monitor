@@ -1,7 +1,3 @@
-/**
- * @file Database setup and access layer using SQLite for storing sessions, agents, events, and token usage. Handles schema creation, migrations, and provides prepared statements for all database operations.
- */
-
 let Database;
 try {
   Database = require("better-sqlite3");
@@ -30,22 +26,14 @@ const path = require("path");
 const fs = require("fs");
 const { getDataDir } = require("./lib/claude-home");
 
-/**
- * Seed `targetPath` from the richest pre-existing database when none exists
- * there yet. Best-effort and strictly non-destructive: it never overwrites the
- * target and never modifies or deletes the sources, so existing web users keep
- * an untouched backup at the old path.
- *
- * Earlier builds kept the DB in the repo-local `data/` dir for `npm start`/`dev`.
- */
 function migrateLegacyDatabase(targetPath) {
   try {
-    // Respect explicit overrides: if the operator pinned the path, they own it.
+    
     if (process.env.DASHBOARD_DB_PATH || process.env.DASHBOARD_DATA_DIR) return;
-    if (fs.existsSync(targetPath)) return; // already migrated, or in active use
+    if (fs.existsSync(targetPath)) return; 
 
     const candidates = [
-      path.join(__dirname, "..", "data", "dashboard.db"), // repo-local `npm start` DB
+      path.join(__dirname, "..", "data", "dashboard.db"), 
     ].filter((p) => p && fs.existsSync(p));
     if (candidates.length === 0) return;
 
@@ -55,13 +43,13 @@ function migrateLegacyDatabase(targetPath) {
 
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
 
-    // `VACUUM INTO` produces a consistent, fully-checkpointed single-file copy —
-    // safe even when another process still holds the source open in WAL mode,
-    // and it never touches the source. A raw file copy of a live WAL database,
-    // by contrast, can capture an inconsistent .db/-wal/-shm trio and yield a
-    // "database disk image is malformed" file, so we deliberately do NOT fall
-    // back to one. `VACUUM INTO` ships in every SQLite the project uses (3.27+:
-    // better-sqlite3 and node:sqlite both support it).
+    
+    
+    
+    
+    
+    
+    
     const src = new Database(source);
     try {
       src.exec(`VACUUM INTO '${targetPath.replace(/'/g, "''")}'`);
@@ -69,50 +57,38 @@ function migrateLegacyDatabase(targetPath) {
       src.close();
     }
 
-    // Carry over the one-time legacy-import marker so the (idempotent) backfill
-    // doesn't needlessly re-run against the migrated copy.
     const srcMarker = path.join(path.dirname(source), ".legacy-import.done");
     const dstMarker = path.join(path.dirname(targetPath), ".legacy-import.done");
     if (fs.existsSync(srcMarker) && !fs.existsSync(dstMarker)) {
       try {
         fs.copyFileSync(srcMarker, dstMarker);
       } catch {
-        /* non-fatal */
+
       }
     }
 
     console.log(`[db] migrated existing database → ${targetPath} (from ${source})`);
   } catch (err) {
-    // Migration is an optimization, never a hard requirement. On any failure,
-    // remove a possibly-partial target so the next start retries (or falls back
-    // to a fresh empty DB) instead of opening a half-written, corrupt file. The
-    // source is never modified, so nothing is lost.
+    
+    
+    
+    
     for (const suffix of ["", "-wal", "-shm"]) {
       try {
         fs.rmSync(targetPath + suffix, { force: true });
       } catch {
-        /* best effort */
+        
       }
     }
     console.warn("[db] legacy database migration skipped:", err?.message || err);
   }
 }
 
-// Resolution order: explicit DASHBOARD_DB_PATH wins; otherwise the file lives in
-// the shared data dir — DASHBOARD_DATA_DIR if set, else the canonical user-global
-// `~/.claude/agent-dashboard/` (see getDataDir). Resolving every launch path to
-// the same file is what lets the web app and the native apps share ONE database.
 const DB_PATH = process.env.DASHBOARD_DB_PATH || path.join(getDataDir(), "dashboard.db");
 const DB_DIR = path.dirname(DB_PATH);
 
 fs.mkdirSync(DB_DIR, { recursive: true });
 
-// One-time, non-destructive migration into the shared location. Earlier builds
-// kept the database per-host: the repo-local `data/` dir for `npm start`/`dev`,
-//  If the canonical DB doesn't exist yet, seed it from
-// the richest legacy copy found so existing users keep all their history. The
-// source files are never modified or deleted, and an existing canonical DB is
-// never overwritten — so this is safe to run on every startup.
 migrateLegacyDatabase(DB_PATH);
 
 const db = new Database(DB_PATH);
@@ -277,9 +253,6 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
 `);
 
-// Migrate: link agent rows to a workflow run. Workflow inner-agents are already
-// ingested as subagents (same subagents/ dir); these columns add the grouping +
-// phase that the run journal provides. Additive, safe on existing DBs.
 try {
   db.prepare("SELECT workflow_run_id FROM agents LIMIT 1").get();
 } catch {
@@ -288,17 +261,6 @@ try {
 }
 db.prepare("CREATE INDEX IF NOT EXISTS idx_agents_workflow ON agents(workflow_run_id)").run();
 
-// Migrate: add the 1h-ephemeral cache-write rate column to model_pricing.
-// Older DBs predate the 5m/1h cache-write split. ADD COLUMN defaults every
-// existing row to 0, which is not a realistic rate — so immediately backfill a
-// sensible per-model value derived from each row's own rates rather than a flat
-// guess (this also covers custom user-added models, not just the defaults):
-//   • 1h write ≈ 2× base input            (Anthropic's published ratio)
-//   • fallback: 1.6× the 5m write rate     (since 5m ≈ 1.25× input ⇒ 1h ≈ 1.6× 5m)
-//   • leave 0 only when neither input nor 5m-write is known.
-// User-edited 5m/input/output/read rates are preserved untouched. The top-up
-// below only inserts missing patterns, so it can't fill a new column on rows
-// that already exist — this backfill is what keeps existing models complete.
 try {
   db.prepare("SELECT cache_write_1h_per_mtok FROM model_pricing LIMIT 1").get();
 } catch {
@@ -316,10 +278,6 @@ try {
   ).run();
 }
 
-// Migrate: add fast-mode (research preview) premium rate columns to model_pricing.
-// Default 0 (= no fast pricing), then backfill the fast-capable Opus models on
-// existing DBs with their published rates so historical configs gain fast pricing
-// without a manual "Reset Defaults" (only fills rows still at 0).
 try {
   db.prepare("SELECT fast_input_per_mtok FROM model_pricing LIMIT 1").get();
 } catch {
@@ -337,11 +295,6 @@ try {
   setFast.run(30, 150, "claude-opus-4-6%");
 }
 
-// Migrate: add time-limited introductory-rate columns to model_pricing.
-// Usage on/before intro_until prices at the intro_* rates; usage after prices at
-// standard — so promo pricing (e.g. Claude Sonnet 5's launch discount) stays
-// correct for both historical and future usage. Additive + default 0/NULL, so
-// existing rows keep behaving exactly as before until an intro rate is set.
 try {
   db.prepare("SELECT intro_until FROM model_pricing LIMIT 1").get();
 } catch {
@@ -357,11 +310,10 @@ try {
   db.prepare("ALTER TABLE model_pricing ADD COLUMN intro_until TEXT").run();
 }
 
-// Migrate: if token_usage has rows without model column (old schema), add it
 try {
   db.prepare("SELECT model FROM token_usage LIMIT 1").get();
 } catch {
-  // Old schema — recreate table with model column
+  
   db.pragma("foreign_keys = OFF");
   db.prepare("ALTER TABLE token_usage RENAME TO token_usage_old").run();
   db.prepare(
@@ -389,7 +341,6 @@ try {
   db.pragma("foreign_keys = ON");
 }
 
-// Migrate: add updated_at columns to sessions and agents
 try {
   db.prepare("SELECT updated_at FROM sessions LIMIT 1").get();
 } catch {
@@ -403,18 +354,10 @@ try {
   db.prepare("UPDATE agents SET updated_at = COALESCE(ended_at, started_at)").run();
 }
 
-// Composite index on (status, updated_at) — must be AFTER migration adds updated_at
 db.exec(
   `CREATE INDEX IF NOT EXISTS idx_sessions_status_updated ON sessions(status, updated_at DESC)`
 );
 
-// Migrate: add `awaiting_input_since` columns to sessions and agents.
-// When Claude Code emits a Notification asking for permission or user input,
-// we mark the session and its main agent as awaiting input by stamping this
-// column with the notification's ISO timestamp. The underlying status enum
-// stays unchanged (so existing CHECK constraints, queries, and aggregations
-// keep working); the UI derives an effective "waiting" status whenever this
-// column is non-null.
 try {
   db.prepare("SELECT awaiting_input_since FROM sessions LIMIT 1").get();
 } catch {
@@ -426,24 +369,16 @@ try {
   db.prepare("ALTER TABLE agents ADD COLUMN awaiting_input_since TEXT").run();
 }
 
-// Migrate: add `transcript_path` to sessions for fast active-session sweep.
-// Before this, the periodic compaction sweep had to do
-//   SELECT DISTINCT json_extract(events.data, '$.transcript_path') ...
-// across the entire events table (250k+ rows in mature DBs). Storing the
-// path on sessions lets the sweep query touch only active session rows.
-// Backfilled once from the events table; thereafter populated by
-// routes/hooks.js ensureSession() and the first event that carries
-// transcript_path.
 try {
   db.prepare("SELECT transcript_path FROM sessions LIMIT 1").get();
 } catch {
   db.prepare("ALTER TABLE sessions ADD COLUMN transcript_path TEXT").run();
-  // Backfill: pull the first transcript_path we can find in events for each
-  // session. Uses a correlated subquery so SQLite limits the inner scan to
-  // each session's rows (still bounded by events row count, but only runs
-  // once per DB lifetime).
-  // json_valid guard: legacy events.data may hold non-JSON text. Without it,
-  // json_extract throws "malformed JSON" mid-UPDATE and aborts startup.
+  
+  
+  
+  
+  
+  
   db.prepare(
     `UPDATE sessions SET transcript_path = (
        SELECT json_extract(e.data, '$.transcript_path')
@@ -456,25 +391,18 @@ try {
   ).run();
 }
 
-// Partial index for the periodic active-session sweep — covers only the
-// handful of rows the sweep actually reads.
 db.exec(
   `CREATE INDEX IF NOT EXISTS idx_sessions_active_tp
    ON sessions(status, transcript_path)
    WHERE status='active' AND transcript_path IS NOT NULL`
 );
 
-
-// Migrate: replace legacy idle/connected agent statuses with waiting/working
-// and update the CHECK constraint to the 4-status model.
-// SQLite doesn't support ALTER CHECK, so we detect the old constraint and
-// rebuild the table with rename-copy-drop when needed.
 {
   const tableInfo = db
     .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='agents'")
     .get();
   if (tableInfo && tableInfo.sql && tableInfo.sql.includes("'idle'")) {
-    // Old constraint found — rebuild the table
+    
     db.exec(`
       PRAGMA foreign_keys = OFF;
       BEGIN;
@@ -513,7 +441,7 @@ db.exec(
       COMMIT;
       PRAGMA foreign_keys = ON;
     `);
-    // Recreate indexes that were on the old table
+    
     db.exec(`
       CREATE INDEX IF NOT EXISTS idx_agents_session ON agents(session_id);
       CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
@@ -522,10 +450,6 @@ db.exec(
   }
 }
 
-// Migrate: add compaction baseline columns to token_usage.
-// When conversation compaction rewrites the JSONL, pre-compaction token counts
-// are lost from the transcript. Baselines preserve those counts so the effective
-// total = current + baseline.
 try {
   db.prepare("SELECT baseline_input FROM token_usage LIMIT 1").get();
 } catch {
@@ -539,14 +463,6 @@ try {
   ).run();
 }
 
-// Migrate: re-key token_usage by pricing dimensions (speed / inference_geo /
-// service_tier) and add the 1h cache-write split + server-tool request columns
-// (with their compaction baselines). SQLite cannot alter a PRIMARY KEY in place,
-// so recreate the table. Existing rows map to the standard / global / standard
-// bucket with zero tool requests and zero 1h-writes — so their computed cost is
-// IDENTICAL to before (all writes priced at the 5m rate). Fully backward
-// compatible with historical sessions; old transcripts lacking these usage
-// fields continue to price exactly as they did.
 try {
   db.prepare("SELECT speed FROM token_usage LIMIT 1").get();
 } catch {
@@ -596,10 +512,6 @@ try {
   db.pragma("foreign_keys = ON");
 }
 
-// Startup cleanup: mark stale active sessions as completed.
-// Legacy sessions (created before SessionEnd hook) will never receive a SessionEnd event,
-// so they stay "active" forever. Complete any active session whose last event is older than
-// 1 hour — the CLI process is certainly gone by then.
 db.prepare(
   `
   UPDATE sessions SET
@@ -615,7 +527,6 @@ db.prepare(
 `
 ).run();
 
-// Startup cleanup: complete orphaned agents on finished sessions
 db.prepare(
   `
   UPDATE agents SET
@@ -626,13 +537,6 @@ db.prepare(
 `
 ).run();
 
-// Startup repair: normalize compaction agents whose started_at > ended_at.
-// Earlier hook ingestion (pre-#156) stamped started_at = NOW (ingestion wall
-// clock) and ended_at = transcript timestamp (in the past), producing
-// impossible negative durations that corrupted workflow analytics. Compaction
-// is instantaneous from the user's perspective, so the transcript timestamp
-// (preserved in ended_at) is the canonical value — collapse started_at to it.
-// Idempotent: only touches rows where the invariant is broken.
 db.prepare(
   `
   UPDATE agents SET
@@ -665,25 +569,25 @@ const stmts = {
   reactivateSession: db.prepare(
     "UPDATE sessions SET status = 'active', ended_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?"
   ),
-  // Updates session.model only when the new value differs from what's stored,
-  // so the broadcast/refresh path stays quiet across the common no-op case.
-  // Used by the hook ingestor to keep the displayed model in sync after the
-  // user invokes /model mid-session.
+  
+  
+  
+  
   updateSessionModel: db.prepare(
     "UPDATE sessions SET model = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND COALESCE(model, '') != ?"
   ),
-  // Updates session.name only when the new value differs from what's stored.
-  // Used by the hook ingestor / watchdog to keep the displayed session name in
-  // sync with the transcript's title (set via /rename, `claude -n`, or the
-  // auto-generated ai-title). No-op (zero changes) on the common unchanged
-  // case so the broadcast path stays quiet.
+  
+  
+  
+  
+  
   updateSessionName: db.prepare(
     "UPDATE sessions SET name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ? AND COALESCE(name, '') != ?"
   ),
-  // One-shot writer for sessions.transcript_path. The NULL/'' guard makes
-  // every subsequent hook event for the same session a SQL no-op, so the
-  // periodic compaction sweep can read transcript_path off the row instead
-  // of scanning events.
+  
+  
+  
+  
   setSessionTranscriptPath: db.prepare(
     "UPDATE sessions SET transcript_path = ? WHERE id = ? AND (transcript_path IS NULL OR transcript_path = '')"
   ),
@@ -705,16 +609,16 @@ const stmts = {
   reactivateAgent: db.prepare(
     "UPDATE agents SET status = 'working', ended_at = NULL, current_tool = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?"
   ),
-  // Repoint a subagent at its true spawner. Used by reconcileSubagentParents to
-  // fix nested subagents that were inserted flat under the main agent (hook and
-  // JSONL ingestion can't know the spawner from a single file). Authoritative
-  // parent comes from the spawner transcript's Task tool_result (agentId).
+  
+  
+  
+  
   setAgentParent: db.prepare(
     "UPDATE agents SET parent_agent_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?"
   ),
-  // Awaiting-input state. Stamping awaiting_input_since marks the row as
-  // "waiting" for user attention without touching the underlying status
-  // enum (kept stable for legacy CHECK constraints and aggregations).
+  
+  
+  
   setSessionAwaitingInput: db.prepare(
     "UPDATE sessions SET awaiting_input_since = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?"
   ),
@@ -730,9 +634,9 @@ const stmts = {
   clearSessionAgentsAwaitingInput: db.prepare(
     "UPDATE agents SET awaiting_input_since = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE session_id = ? AND awaiting_input_since IS NOT NULL"
   ),
-  // Find the deepest currently-working subagent in a session using a recursive CTE.
-  // Used to infer which agent is spawning a new subagent when hook events don't
-  // carry an explicit agent ID. Returns the most recently created deepest agent.
+  
+  
+  
   findDeepestWorkingAgent: db.prepare(`
     WITH RECURSIVE agent_depth AS (
       SELECT id, parent_agent_id, 0 as depth
@@ -770,8 +674,8 @@ const stmts = {
   ),
   countEvents: db.prepare("SELECT COUNT(*) as count FROM events"),
   countEventsSince: db.prepare("SELECT COUNT(*) as count FROM events WHERE created_at >= ?"),
-  // Accepts tz modifier (e.g. '-420 minutes') to compute local midnight in UTC.
-  // Pattern: shift now→local, truncate to day start, shift back→UTC.
+  
+  
   countEventsToday: db.prepare(
     "SELECT COUNT(*) as count FROM events WHERE created_at >= datetime('now', ?, 'start of day', ?)"
   ),
@@ -787,8 +691,8 @@ const stmts = {
   agentStatusCounts: db.prepare("SELECT status, COUNT(*) as count FROM agents GROUP BY status"),
   sessionStatusCounts: db.prepare("SELECT status, COUNT(*) as count FROM sessions GROUP BY status"),
 
-  // Legacy additive upsert. Targets the standard/global/standard bucket; kept
-  // for backward compatibility with any caller using the original 6-arg shape.
+  
+  
   upsertTokenUsage: db.prepare(`
     INSERT INTO token_usage (session_id, model, speed, inference_geo, service_tier,
                              input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
@@ -799,29 +703,29 @@ const stmts = {
       cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
       cache_write_tokens = cache_write_tokens + excluded.cache_write_tokens
   `),
-  // Replace a bucket's totals with the latest full re-parse, keeping the
-  // effective total (`live + baseline`) a monotonic HIGH-WATER MARK: it never
-  // decreases, but it also never inflates past the largest value ever seen.
-  //
-  //   baseline := max(old_live + old_baseline - new_live, 0)
-  //   live     := new_live
-  //   ⇒ effective = new_live + baseline = max(old_effective, new_live)
-  //
-  // Why not the old `baseline += old_live` on any decrease: two writers hit the
-  // same (session, model, …) bucket with DIFFERENT scopes — the live hook writer
-  // stores main-transcript-only tokens (server/routes/hooks.js), while
-  // importSession stores main+subagents combined (combineSessionTokens). Every
-  // time the smaller write followed the larger, the old formula mistook it for a
-  // compaction and ADDED the current value into baseline, so a long-lived,
-  // frequently-reswept session accumulated a baseline many times its real usage
-  // (a 26-day/80-repo session reached ~11× — its transcript proved 774M
-  // cache-read while baseline claimed 8.5B). Transcripts are append-only, so a
-  // full re-parse always sees the complete total; the high-water mark preserves
-  // the true max across writer-scope noise and re-imports without ever
-  // double-counting. Args, in order:
-  //   session_id, model, speed, inference_geo, service_tier,
-  //   input, output, cache_read, cache_write, cache_write_1h,
-  //   web_search, web_fetch, code_execution
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   replaceTokenUsage: db.prepare(`
     INSERT INTO token_usage (session_id, model, speed, inference_geo, service_tier,
                              input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cache_write_1h_tokens,
@@ -872,7 +776,7 @@ const stmts = {
     FROM token_usage WHERE session_id = ?`
   ),
 
-  // Model pricing (keep listPricing + matchPricing for cost calculation)
+  
   listPricing: db.prepare("SELECT * FROM model_pricing ORDER BY display_name ASC"),
   matchPricing: db.prepare(
     "SELECT * FROM model_pricing WHERE ? LIKE REPLACE(model_pattern, '%', '%') LIMIT 1"
@@ -885,7 +789,7 @@ const stmts = {
     ORDER BY count DESC
     LIMIT 20
   `),
-  // Accept a timezone modifier (e.g. '-420 minutes') so GROUP BY uses local dates
+  
   dailyEventCounts: db.prepare(`
     SELECT DATE(created_at, ?) as date, COUNT(*) as count
     FROM events
@@ -912,7 +816,7 @@ const stmts = {
     FROM events
   `),
 
-  // Per-session aggregations powering the SessionOverview panel.
+  
   sessionEventCount: db.prepare("SELECT COUNT(*) as count FROM events WHERE session_id = ?"),
   sessionEventTypeCounts: db.prepare(`
     SELECT event_type, COUNT(*) as count
@@ -929,9 +833,9 @@ const stmts = {
     ORDER BY count DESC
     LIMIT 15
   `),
-  // Errors are surfaced via a couple of conventions: event_type containing
-  // "error" (case-insensitive) OR a summary prefixed with "Error" / "Failed".
-  // We accept both so legacy and current hook conventions both count.
+  
+  
+  
   sessionErrorCount: db.prepare(`
     SELECT COUNT(*) as count
     FROM events
@@ -973,10 +877,10 @@ const stmts = {
     WHERE session_id = ?
   `),
 
-  // ── Workflow-tool runs ────────────────────────────────────────────────────
-  // Upsert keyed by run_id. started_at and created_at are written only on first
-  // insert (COALESCE keeps the existing launch time across a running→completed
-  // transition); every other field reflects the latest journal/scan.
+  
+  
+  
+  
   upsertWorkflow: db.prepare(
     `INSERT INTO workflows
        (run_id, session_id, task_id, name, status, default_model, started_at, ended_at,

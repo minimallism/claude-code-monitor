@@ -1,8 +1,3 @@
-/**
- * @file Express router for analytics endpoints, providing aggregated statistics on token usage, tool usage, daily events/sessions, agent types, and more. It queries the database for various metrics and returns them in a structured JSON format for frontend consumption.
-
- */
-
 const { Router } = require("express");
 const { stmts, db } = require("../db");
 
@@ -11,8 +6,8 @@ const { calculateCost } = require("./pricing");
 const router = Router();
 
 router.get("/", (req, res) => {
-  // Client sends tz_offset (minutes from getTimezoneOffset(), e.g. 420 for PDT)
-  // Negate it to get the SQLite modifier: 420 → '-420 minutes'
+  
+  
   const rawOffset = parseInt(req.query.tz_offset, 10);
   const tzModifier = Number.isFinite(rawOffset) ? `${-rawOffset} minutes` : "+0 minutes";
 
@@ -38,10 +33,10 @@ router.get("/", (req, res) => {
     )
     .all();
 
-  // Calculate total cost across all sessions
+  
   const pricingRules = stmts.listPricing.all();
-  // Join the owning session's start date so each bucket is priced at the rate
-  // effective when it was used (date-effective promo rates, e.g. Sonnet 5 intro).
+  
+  
   const allTokenUsage = db
     .prepare(
       "SELECT tu.*, DATE(s.started_at) as date FROM token_usage tu JOIN sessions s ON s.id = tu.session_id"

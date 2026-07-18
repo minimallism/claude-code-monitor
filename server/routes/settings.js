@@ -1,8 +1,3 @@
-/**
- * @file Express router for settings-related endpoints, providing system info, database statistics, hook status, and operations to clear data, re-import sessions, reinstall hooks, and perform cleanup of stale sessions. This allows the frontend to manage and maintain the agent monitoring system effectively.
-
- */
-
 const { Router } = require("express");
 const fs = require("fs");
 const path = require("path");
@@ -70,13 +65,12 @@ function getHookStatus() {
   }
 }
 
-// GET /api/settings/info — system info, db stats, hook status
 router.get("/info", (req, res) => {
   const dbSize = getDbSize();
   const counts = getTableCounts();
   const hookStatus = getHookStatus();
 
-  // Advanced SQLite info
+  
   const pragmas = {
     journal_mode: db.pragma("journal_mode", { simple: true }),
     synchronous: db.pragma("synchronous", { simple: true }),
@@ -86,7 +80,7 @@ router.get("/info", (req, res) => {
     busy_timeout: db.pragma("busy_timeout", { simple: true }),
   };
 
-  // Recent activity load (events in last 5, 15, 60 minutes)
+  
   const getCount = (ms) => {
     const d = new Date(Date.now() - ms).toISOString();
     return db.prepare("SELECT COUNT(*) as c FROM events WHERE created_at > ?").get(d).c;
@@ -123,7 +117,6 @@ router.get("/info", (req, res) => {
   });
 });
 
-// POST /api/settings/clear-data — delete all sessions, agents, events, tokens
 router.post("/clear-data", (_req, res) => {
   const counts = getTableCounts();
   db.pragma("foreign_keys = OFF");
@@ -135,7 +128,6 @@ router.post("/clear-data", (_req, res) => {
   res.json({ ok: true, cleared: counts });
 });
 
-// POST /api/settings/reinstall-hooks — reinstall Claude Code hooks
 router.post("/reinstall-hooks", (_req, res) => {
   try {
     const { installHooks } = require("../../scripts/install-hooks");
@@ -149,13 +141,12 @@ router.post("/reinstall-hooks", (_req, res) => {
   }
 });
 
-// POST /api/settings/cleanup — abandon stale sessions, purge old data
 router.post("/cleanup", (req, res) => {
   const { abandon_hours, purge_days } = req.body;
   const result = { abandoned: 0, purged_sessions: 0, purged_events: 0, purged_agents: 0 };
 
   if (abandon_hours && typeof abandon_hours === "number" && abandon_hours > 0) {
-    // Mark active sessions with no recent events as abandoned
+    
     const cutoff = new Date(Date.now() - abandon_hours * 3600 * 1000).toISOString();
     const stale = db
       .prepare(
@@ -172,7 +163,7 @@ router.post("/cleanup", (req, res) => {
       db.prepare(
         "UPDATE sessions SET status = 'abandoned', ended_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?"
       ).run(row.id);
-      // Also complete any lingering agents
+      
       db.prepare(
         "UPDATE agents SET status = 'completed', ended_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE session_id = ? AND status IN ('waiting','working')"
       ).run(row.id);
@@ -182,7 +173,7 @@ router.post("/cleanup", (req, res) => {
 
   if (purge_days && typeof purge_days === "number" && purge_days > 0) {
     const cutoff = new Date(Date.now() - purge_days * 86400 * 1000).toISOString();
-    // Only purge completed/error/abandoned sessions, never active
+    
     const toDelete = db
       .prepare(
         "SELECT id FROM sessions WHERE status IN ('completed','error','abandoned') AND started_at < ?"
@@ -192,7 +183,7 @@ router.post("/cleanup", (req, res) => {
     if (toDelete.length > 0) {
       const ids = toDelete.map((r) => r.id);
       const placeholders = ids.map(() => "?").join(",");
-      // Cascading deletes handle agents/events, but token_usage FK might not cascade on all setups
+      
       result.purged_events = db
         .prepare(`DELETE FROM events WHERE session_id IN (${placeholders})`)
         .run(...ids).changes;

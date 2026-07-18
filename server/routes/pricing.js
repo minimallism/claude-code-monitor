@@ -1,7 +1,3 @@
-/**
- * @file Express router for calculating costs based on token usage. It provides endpoints to calculate total costs across all sessions or for a specific session. The cost calculation matches token usage against the most specific applicable pricing rule based on model patterns.
- */
-
 const { Router } = require("express");
 const { stmts, db } = require("../db");
 const {
@@ -17,24 +13,14 @@ const router = Router();
 
 const round4 = (n) => Math.round(n * 10000) / 10000;
 
-/**
- * Resolve the effective per-MTok rates for a token bucket, applying the pricing
- * modifiers carried on the bucket (fast mode, US data residency, Batch API).
- *   - Fast mode: premium input/output rates; cache rates scale with the fast
- *     input base (the standard caching multipliers ride on top of fast pricing).
- *   - Data residency "us": 1.1x across every category.
- *   - Batch tier: 50% off across every category.
- * Older buckets default to speed=standard / geo=global / tier=standard, so they
- * resolve to exactly the standard rates — historical sessions price unchanged.
- */
 function ratesForBucket(rule, row, asOf) {
   const r = rule || {};
 
-  // Time-limited introductory rates. Prefer the usage row's own date (so
-  // historical usage keeps the rate it was billed at and future usage picks up
-  // the standard rate), else the caller-provided asOf, else today. Dates are
-  // compared as YYYY-MM-DD strings (both intro_until and the daily date use that
-  // shape), so slice any full ISO timestamp to its day.
+  
+  
+  
+  
+  
   const day = String(row.date || asOf || new Date().toISOString()).slice(0, 10);
   const useIntro = !!r.intro_until && day <= r.intro_until;
   const pick = (introVal, stdVal) => (useIntro && (introVal || 0) > 0 ? introVal : stdVal || 0);
@@ -73,11 +59,6 @@ function ratesForBucket(rule, row, asOf) {
   return { rIn, rOut, rRead, r5m, r1h };
 }
 
-// Calculate cost for a set of token buckets against pricing rules. Each bucket
-// is (model, speed, inference_geo, service_tier) with token counts plus the 1h
-// cache-write split and server-tool request counts. Cost = token cost (rate-
-// modified) + web-search surcharge ($10/1k) + estimated code-execution time
-// (free when used with web search/fetch; org free-hours allowance applied once).
 function calculateCost(tokenRows, pricingRules, asOf) {
   const sortedRules = [...pricingRules].sort(
     (a, b) => b.model_pattern.length - a.model_pattern.length
@@ -86,15 +67,15 @@ function calculateCost(tokenRows, pricingRules, asOf) {
   let tokenCost = 0;
   let webSearchCost = 0;
   let codeExecHours = 0;
-  // Breakdown is aggregated per (model, speed, geo, tier) tuple, not per input
-  // row. This lets callers feed date-split rows (e.g. the daily-usage query,
-  // one row per date × model) so each row is priced at its own date's rate,
-  // while the breakdown still collapses to one entry per model. For callers that
-  // already pass one row per tuple (aggregate total, per-session), it's a no-op.
+  
+  
+  
+  
+  
   const breakdownMap = new Map();
-  // Track buckets that matched NO pricing rule. Their cost is $0, which would
-  // silently under-report the true total — surface them so the number is honest
-  // and the user knows to add a rule (e.g. a brand-new model id).
+  
+  
+  
   const unpriced = new Map();
 
   for (const row of tokenRows) {
@@ -172,9 +153,9 @@ function calculateCost(tokenRows, pricingRules, asOf) {
     cost: round4(_cost),
   }));
 
-  // Code execution is billed by container-time, estimated at the 5-minute
-  // minimum per request. Apply the org free-hours allowance once, then charge
-  // the remainder — so normal usage (well under the allowance) costs $0.
+  
+  
+  
   const chargedHours = Math.max(0, codeExecHours - CODE_EXEC_FREE_HOURS);
   const codeExecCost = chargedHours * CODE_EXEC_PER_HOUR;
   const total = tokenCost + webSearchCost + codeExecCost;
@@ -189,7 +170,7 @@ function calculateCost(tokenRows, pricingRules, asOf) {
       code_execution_hours_estimated: round4(codeExecHours),
       code_execution_free_hours: CODE_EXEC_FREE_HOURS,
     },
-    // Models with usage but no matching pricing rule (cost not counted).
+    
     unpriced_models: [...unpriced.values()],
   };
 }
@@ -220,7 +201,6 @@ function calculateDailyCosts(dailyTokenRows, pricingRules) {
     .map(([date, rows]) => ({ date, cost: calculateCost(rows, pricingRules, date).total_cost }));
 }
 
-// GET /api/pricing/cost - Get total cost across all sessions
 router.get("/cost", (req, res) => {
   const rawOffset = parseInt(req.query.tz_offset, 10);
   const tzModifier = Number.isFinite(rawOffset) ? `${-rawOffset} minutes` : "+0 minutes";
@@ -247,16 +227,15 @@ router.get("/cost", (req, res) => {
     )
     .all(tzModifier);
   const rules = stmts.listPricing.all();
-  // Price the date-split rows so each day's usage bills at the rate effective on
-  // that date (e.g. Sonnet 5's intro discount before 2026-08-31, standard after).
-  // Coverage equals the undated aggregate — token_usage cascades with sessions,
-  // so the INNER JOIN drops nothing — and the breakdown re-collapses per model.
+  
+  
+  
+  
   const result = calculateCost(dailyTokens, rules);
   const daily_costs = calculateDailyCosts(dailyTokens, rules);
   res.json({ ...result, daily_costs });
 });
 
-// GET /api/pricing/cost/:sessionId - Get cost for a specific session
 router.get("/cost/:sessionId", (req, res) => {
   const rawOffset = parseInt(req.query.tz_offset, 10);
   const tzModifier = Number.isFinite(rawOffset) ? `${-rawOffset} minutes` : "+0 minutes";
@@ -266,21 +245,13 @@ router.get("/cost/:sessionId", (req, res) => {
   const started = db
     .prepare("SELECT DATE(started_at, ?) as date FROM sessions WHERE id = ?")
     .get(tzModifier, req.params.sessionId);
-  // Price the session as of its start date so a session that ran during a promo
-  // window keeps that rate (e.g. Sonnet 5 intro through 2026-08-31).
+  
+  
   const result = calculateCost(tokenRows, rules, started?.date);
   const daily_costs = started ? [{ date: started.date, cost: result.total_cost }] : [];
   res.json({ ...result, daily_costs });
 });
 
-/**
- * Compute a single agent's own cost from the token buckets stashed in its
- * metadata by the importer (agent.metadata.tokens). Returns 0 when the agent has
- * no per-agent usage recorded (e.g. main agents — whose cost is the session
- * total — compaction pseudo-agents, or live subagents not yet backfilled from
- * their transcript). Priced with the agent's start date so a promo/standard
- * cutover is respected, exactly like session cost.
- */
 function agentOwnCost(agent, pricingRules) {
   if (!agent || !agent.metadata) return 0;
   let meta;
@@ -295,12 +266,6 @@ function agentOwnCost(agent, pricingRules) {
   return calculateCost(rows, pricingRules, asOf).total_cost;
 }
 
-/**
- * Return a shallow copy of each agent row with a computed `cost` field — the
- * agent's OWN cost (see agentOwnCost). Pricing rules are read once for the whole
- * batch. Used by the agent-list endpoints so subagent cards can show their real
- * cost instead of the session total.
- */
 function attachAgentCosts(agents) {
   if (!Array.isArray(agents) || agents.length === 0) return agents;
   const rules = stmts.listPricing.all();

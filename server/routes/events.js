@@ -1,12 +1,3 @@
-/**
- * @file Express router for event endpoints. Supports listing events with
- * multi-dimensional filtering (event type, tool name, agent, session, text
- * search, date range) plus pagination. Also exposes a `/facets` endpoint that
- * returns the distinct event_type and tool_name values currently in the DB,
- * so the UI can populate filter dropdowns without hardcoding them.
-
- */
-
 const { Router } = require("express");
 const { db } = require("../db");
 
@@ -38,8 +29,6 @@ function clampInt(raw, fallback, min, max) {
   return Math.min(Math.max(n, min), max);
 }
 
-// Builds the WHERE clause + param array for a given filter set. Used by both
-// the list and count queries so they stay in sync.
 function buildWhere(filters) {
   const clauses = [];
   const params = [];
@@ -75,7 +64,6 @@ function buildWhere(filters) {
   };
 }
 
-// GET /api/events?event_type=a,b&tool_name=Bash&q=curl&from=...&to=...&limit=50&offset=0
 router.get("/", (req, res) => {
   const limit = clampInt(req.query.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
   const offset = clampInt(req.query.offset, 0, 0, Number.MAX_SAFE_INTEGER);
@@ -101,7 +89,6 @@ router.get("/", (req, res) => {
   res.json({ events, limit, offset, total });
 });
 
-// GET /api/events/facets — distinct event_type / tool_name values in the DB.
 router.get("/facets", (_req, res) => {
   const eventTypes = db
     .prepare(

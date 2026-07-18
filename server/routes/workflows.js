@@ -1,24 +1,17 @@
-/**
- * @file Express router for workflow intelligence endpoints, providing aggregated insights into workflow orchestration, tool usage patterns, subagent effectiveness, error propagation, concurrency, and session complexity. It queries the database for various metrics and patterns related to agents, sessions, and events, and returns a comprehensive JSON response for frontend visualization on the dashboard.
-
- */
-
 const { Router } = require("express");
 const { db, stmts } = require("../db");
 
 const router = Router();
 
-// ── Helper: compute session duration in seconds ──
 function durationSec(s) {
   if (!s.started_at) return 0;
   const end = s.ended_at || new Date().toISOString();
   return Math.max(0, (new Date(end) - new Date(s.started_at)) / 1000);
 }
 
-// ── GET / — Aggregate workflow intelligence ──
 router.get("/", (req, res) => {
   try {
-    // Optional status filter: "active", "completed", or omit for all
+    
     const statusFilter = req.query.status || null;
     const data = {
       orchestration: getOrchestrationData(statusFilter),
@@ -38,23 +31,11 @@ router.get("/", (req, res) => {
   }
 });
 
-
-
-// ═══════════════════════════════════════════════════
-// Data-fetching functions
-// ═══════════════════════════════════════════════════
-
-/**
- * Build a SQL WHERE clause for session status filtering.
- * Returns { clause, params } where clause is either empty or " AND s.status = ?".
- * Use `sessionAlias` to match the table alias used in your query (default "s").
- */
 function statusClause(statusFilter, alias = "s") {
   if (!statusFilter || statusFilter === "all") return { clause: "", params: [] };
   return { clause: ` AND ${alias}.status = ?`, params: [statusFilter] };
 }
 
-/** Same but for agents table joins where we need to filter via session_id */
 function sessionIdFilter(statusFilter) {
   if (!statusFilter || statusFilter === "all") return { clause: "", params: [] };
   return {
@@ -67,17 +48,17 @@ function getOrchestrationData(statusFilter) {
   const sf = sessionIdFilter(statusFilter);
   const ss = statusClause(statusFilter);
 
-  // Count sessions
+  
   const sessionCount = db
     .prepare(`SELECT COUNT(*) as c FROM sessions s WHERE 1=1${ss.clause}`)
     .get(...ss.params).c;
 
-  // Main agents count
+  
   const mainCount = db
     .prepare(`SELECT COUNT(*) as c FROM agents WHERE type = 'main'${sf.clause}`)
     .get(...sf.params).c;
 
-  // Subagent types with counts and parent info
+  
   const subagentTypes = db
     .prepare(
       `SELECT subagent_type, COUNT(*) as count,
@@ -88,7 +69,7 @@ function getOrchestrationData(statusFilter) {
     )
     .all(...sf.params);
 
-  // Edges: parent_subagent_type -> child_subagent_type with frequency
+  
   const edges = db
     .prepare(
       `SELECT
@@ -103,7 +84,7 @@ function getOrchestrationData(statusFilter) {
     )
     .all(...sf.params);
 
-  // Outcome counts
+  
   const outcomes = db
     .prepare(
       `SELECT status, COUNT(*) as count FROM agents
@@ -112,7 +93,7 @@ function getOrchestrationData(statusFilter) {
     )
     .all(...sf.params);
 
-  // Compaction agents (context compressions per session)
+  
   const compactions = db
     .prepare(
       `SELECT session_id, COUNT(*) as count
@@ -136,7 +117,7 @@ function getOrchestrationData(statusFilter) {
 function getToolFlowData(statusFilter) {
   const sf = sessionIdFilter(statusFilter);
 
-  // Tool-to-tool transitions (next tool in same session)
+  
   const transitions = db
     .prepare(
       `SELECT e1.tool_name as source, e2.tool_name as target, COUNT(*) as value
@@ -152,7 +133,7 @@ function getToolFlowData(statusFilter) {
     )
     .all(...sf.params);
 
-  // Tool counts for sizing nodes
+  
   const toolCounts = db
     .prepare(
       `SELECT tool_name, COUNT(*) as count FROM events
@@ -183,16 +164,16 @@ function getSubagentEffectiveness(statusFilter) {
     )
     .all(...sf.params);
 
-  // Get token usage per subagent type (approximate via session token totals)
-  // Also get average duration per type
+  
+  
   const withMetrics = types.map((t) => {
     const durRow = db
       .prepare(
-        // Clamp each row's duration to >= 0 before averaging. The #156 startup
-        // repair only heals compaction rows; any other subagent type whose
-        // ended_at < started_at (clock skew, replayed/synced transcripts) would
-        // otherwise drag this average negative. MAX(0, …) mirrors the Math.max(0)
-        // guard durationSec() already applies to every other duration here.
+        
+        
+        
+        
+        
         `SELECT AVG(
           CASE WHEN ended_at IS NOT NULL THEN
             MAX(0, (julianday(ended_at) - julianday(started_at)) * 86400)
@@ -202,9 +183,9 @@ function getSubagentEffectiveness(statusFilter) {
       )
       .get(t.subagent_type, ...sf.params);
 
-    // Weekly trend: count per day-of-week (Mon–Sun) over last 8 weeks.
-    // SQLite strftime('%w') → 0=Sun, 1=Mon, ..., 6=Sat.
-    // Frontend expects index 0=Mon → 6=Sun, so remap with (dow + 6) % 7.
+    
+    
+    
     const trendRows = db
       .prepare(
         `SELECT CAST(strftime('%w', started_at) AS INTEGER) as dow, COUNT(*) as count
@@ -214,10 +195,10 @@ function getSubagentEffectiveness(statusFilter) {
       )
       .all(t.subagent_type, ...sf.params);
 
-    // Build 7-slot array: [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
+    
     const trendByDay = [0, 0, 0, 0, 0, 0, 0];
     for (const row of trendRows) {
-      const idx = (row.dow + 6) % 7; // Sun(0)→6, Mon(1)→0, Tue(2)→1, ...
+      const idx = (row.dow + 6) % 7; 
       trendByDay[idx] = row.count;
     }
 
@@ -239,7 +220,7 @@ function getWorkflowPatterns(statusFilter) {
   const sf = sessionIdFilter(statusFilter);
   const ss = statusClause(statusFilter);
 
-  // Get ordered subagent sequences per session
+  
   const sessions = db
     .prepare(
       `SELECT session_id, GROUP_CONCAT(subagent_type, '→') as sequence
@@ -254,7 +235,7 @@ function getWorkflowPatterns(statusFilter) {
     )
     .all(...sf.params);
 
-  // Count pattern frequencies
+  
   const patternCounts = {};
   const totalSessions = db
     .prepare(`SELECT COUNT(*) as c FROM sessions s WHERE 1=1${ss.clause}`)
@@ -264,23 +245,23 @@ function getWorkflowPatterns(statusFilter) {
     patternCounts[seq] = (patternCounts[seq] || 0) + 1;
   }
 
-  // Also count 2-step and 3-step sub-patterns
+  
   for (const row of sessions) {
     const steps = row.sequence.split("→");
-    // 2-step windows
+    
     for (let i = 0; i < steps.length - 1; i++) {
       const sub = steps.slice(i, i + 2).join("→");
       patternCounts[sub] = (patternCounts[sub] || 0) + 1;
     }
-    // 3-step windows
+    
     for (let i = 0; i < steps.length - 2; i++) {
       const sub = steps.slice(i, i + 3).join("→");
       patternCounts[sub] = (patternCounts[sub] || 0) + 1;
     }
   }
 
-  // Deduplicate: keep only patterns where the full sequence count >= 2-step count
-  // Sort by frequency, take top 10
+  
+  
   const sorted = Object.entries(patternCounts)
     .filter(([, count]) => count >= 2)
     .sort((a, b) => b[1] - a[1])
@@ -291,7 +272,7 @@ function getWorkflowPatterns(statusFilter) {
       percentage: totalSessions > 0 ? +((count / totalSessions) * 100).toFixed(1) : 0,
     }));
 
-  // Also track solo sessions (no subagents)
+  
   const soloCount = db
     .prepare(
       `SELECT COUNT(*) as c FROM sessions s
@@ -309,7 +290,7 @@ function getWorkflowPatterns(statusFilter) {
 function getModelDelegation(statusFilter) {
   const ss = statusClause(statusFilter);
 
-  // Model usage for main agents
+  
   const mainModels = db
     .prepare(
       `SELECT s.model, COUNT(DISTINCT a.id) as agent_count, COUNT(DISTINCT s.id) as session_count
@@ -319,7 +300,7 @@ function getModelDelegation(statusFilter) {
     )
     .all(...ss.params);
 
-  // Model usage for subagents (via session model — best approximation)
+  
   const subagentModels = db
     .prepare(
       `SELECT s.model, COUNT(a.id) as agent_count
@@ -329,7 +310,7 @@ function getModelDelegation(statusFilter) {
     )
     .all(...ss.params);
 
-  // Token cost per model — filter via session_id on token_usage table
+  
   const sfToken = sessionIdFilter(statusFilter);
   const tokensByModel = db
     .prepare(
@@ -350,8 +331,8 @@ function getErrorPropagation(statusFilter) {
   const sf = sessionIdFilter(statusFilter);
   const ss = statusClause(statusFilter);
 
-  // Error count by depth — include both agent-level errors (status = 'error')
-  // AND session-level errors (session status = 'error' mapped to depth 0 for main agent).
+  
+  
   const errorsByDepth = db
     .prepare(
       `WITH RECURSIVE agent_depth AS (
@@ -367,8 +348,8 @@ function getErrorPropagation(statusFilter) {
     )
     .all(...sf.params);
 
-  // Also count sessions that ended in error but whose main agent wasn't marked error.
-  // Map these to depth 0 (session-level errors: quota limits, crashes, etc.)
+  
+  
   const sessionErrorsNotInAgents = db
     .prepare(
       `SELECT COUNT(*) as c FROM sessions s
@@ -388,7 +369,7 @@ function getErrorPropagation(statusFilter) {
     }
   }
 
-  // Error-prone subagent types — from agent errors + from error events on subagents
+  
   const errorTypes = db
     .prepare(
       `SELECT subagent_type, COUNT(*) as count
@@ -397,7 +378,7 @@ function getErrorPropagation(statusFilter) {
     )
     .all(...sf.params);
 
-  // Also capture error events (Stop with error summary, API errors from transcripts)
+  
   const eventErrors = db
     .prepare(
       `SELECT e.summary, COUNT(*) as count
@@ -408,7 +389,7 @@ function getErrorPropagation(statusFilter) {
     )
     .all(...sf.params);
 
-  // Error rate per session (sessions with error status OR sessions with error events)
+  
   const sessionsWithErrors = db
     .prepare(
       `SELECT COUNT(DISTINCT id) as c FROM (
@@ -439,8 +420,8 @@ function getErrorPropagation(statusFilter) {
 function getConcurrencyData(statusFilter) {
   const ss = statusClause(statusFilter);
 
-  // For aggregate: average agent types per position in session timeline
-  // Get agent start/end as fraction of session duration per session
+  
+  
   const lanes = db
     .prepare(
       `SELECT
@@ -455,7 +436,7 @@ function getConcurrencyData(statusFilter) {
     )
     .all(...ss.params);
 
-  // Build aggregate: for each subagent_type, average start% and end%
+  
   const typeAgg = {};
   for (const lane of lanes) {
     const sessStart = new Date(lane.session_start).getTime();
@@ -475,7 +456,7 @@ function getConcurrencyData(statusFilter) {
     typeAgg[key].ends.push(endPct);
   }
 
-  // Average start/end per type
+  
   const aggregateLanes = Object.entries(typeAgg)
     .map(([name, data]) => ({
       name,
@@ -508,7 +489,7 @@ function getSessionComplexity(statusFilter) {
 
   const sessions = rows.map((r) => {
     const dur = durationSec(r);
-    // Get token count for this session
+    
     const tokens = db
       .prepare(
         `SELECT SUM(input_tokens + baseline_input + output_tokens + baseline_output +
@@ -536,12 +517,12 @@ function getCompactionImpact(statusFilter) {
   const sf = sessionIdFilter(statusFilter);
   const ss = statusClause(statusFilter);
 
-  // Total compactions
+  
   const totalCompactions = db
     .prepare(`SELECT COUNT(*) as c FROM agents WHERE subagent_type = 'compaction'${sf.clause}`)
     .get(...sf.params).c;
 
-  // Total baseline tokens (tokens "recovered" through compaction)
+  
   const recovered = db
     .prepare(
       `SELECT
@@ -550,7 +531,7 @@ function getCompactionImpact(statusFilter) {
     )
     .get(...sf.params);
 
-  // Compactions per session distribution
+  
   const perSession = db
     .prepare(
       `SELECT session_id, COUNT(*) as compactions
@@ -559,7 +540,7 @@ function getCompactionImpact(statusFilter) {
     )
     .all(...sf.params);
 
-  // Sessions with compactions vs without
+  
   const sessionsWithCompactions = db
     .prepare(
       `SELECT COUNT(DISTINCT session_id) as c FROM agents WHERE subagent_type = 'compaction'${sf.clause}`
@@ -581,8 +562,8 @@ function getCompactionImpact(statusFilter) {
 function getAgentCooccurrence(statusFilter) {
   const sf = sessionIdFilter(statusFilter);
 
-  // Directed: which agent type runs AFTER which other type in the same session
-  // a1 started before a2 → edge a1 → a2 with count
+  
+  
   const pairs = db
     .prepare(
       `SELECT a1.subagent_type as source, a2.subagent_type as target,
@@ -604,14 +585,6 @@ function getAgentCooccurrence(statusFilter) {
   return pairs;
 }
 
-
-// ── Workflow-tool runs (issue #167) ───────────────────────────────────────
-// Distinct from the analytics above: these are fleets spawned by the Claude
-// Code "Workflow" tool, ingested from on-disk run journals into the workflows
-// table (see server/lib/workflow-ingest.js). Routed under /runs so they never
-// collide with the analytics root or /session/:id.
-
-// Parse the JSON-blob columns into arrays for the client.
 function hydrateWorkflow(row) {
   if (!row) return row;
   let phases = [];
@@ -629,7 +602,6 @@ function hydrateWorkflow(row) {
   return { ...row, phases, progress };
 }
 
-// GET /runs — list workflow runs (filter by status or session_id), paginated.
 router.get("/runs", (req, res) => {
   try {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 1000);
@@ -658,7 +630,6 @@ router.get("/runs", (req, res) => {
   }
 });
 
-// GET /runs/:runId — one run with its linked inner agents + their events.
 router.get("/runs/:runId", (req, res) => {
   try {
     const wf = stmts.getWorkflow.get(req.params.runId);
@@ -668,7 +639,7 @@ router.get("/runs/:runId", (req, res) => {
         .json({ error: { code: "WORKFLOW_NOT_FOUND", message: "Workflow run not found" } });
     }
     const agents = stmts.listAgentsByWorkflow.all(req.params.runId);
-    // Events attributed to this run's inner agents (chronological).
+    
     let events = [];
     if (agents.length > 0) {
       const ids = agents.map((a) => a.id);

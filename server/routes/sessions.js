@@ -1,8 +1,3 @@
-/**
- * @file Express router for session endpoints, allowing creation, retrieval, and updating of sessions with optional pagination and filtering by status. It also computes costs for sessions based on token usage and pricing rules, and broadcasts session changes to connected WebSocket clients for real-time updates.
-
- */
-
 const { Router } = require("express");
 const fs = require("fs");
 const path = require("path");
@@ -23,37 +18,11 @@ const {
 
 const router = Router();
 
-// JSONL entry types the transcript reader turns into renderable messages.
-// `user`/`assistant` are the conversation. `custom-title` is the metadata line
-// written by /rename, `claude -n`, and the picker's Ctrl+R — surfaced as an
-// inline rename marker so a rename is visible even when there is no command
-// line (e.g. `claude -n` at startup). `system` carries local slash-command I/O
-// in newer Claude Code builds — `system`/`local_command` lines hold the TUI
-// markup (`<command-name>`, `<local-command-stdout>`, …) in a top-level
-// `content` string, so /color, /rename, /clear, and custom commands render as
-// command pills + their captured output; every other `system` subtype
-// (turn_duration, stop_hook_summary, away_summary, …) is dropped as noise.
-// (ai-title is intentionally excluded: it repeats on nearly every turn and
-// would flood the stream; it drives the session NAME instead, not the chat.)
 const TRANSCRIPT_RENDER_TYPES = new Set(["user", "assistant", "custom-title", "system"]);
 
-/**
- * Classify the TRUE sender of a transcript entry. A JSONL `type:"user"` line is
- * not always the human: it also carries tool results, harness-injected
- * task-notifications, /loop re-injections (`isMeta`), and — in a subagent
- * transcript — the task prompt handed down by the orchestrator. Attributing all
- * of those to "User" is wrong; the UI styles each sender distinctly.
- *
- * Returns: "user" | "assistant" | "orchestrator" | "system" | "tool".
- *   user         — a real message typed by the human
- *   assistant    — the agent's own turn
- *   orchestrator — a subagent's task, assigned by its parent/main agent
- *   system       — harness/tooling injection (task-notification, /loop meta, …)
- *   tool         — a tool_result echoed back on a `user` line
- */
 function classifyTranscriptSender(entry, isSubagentFile) {
   if (entry.type === "assistant") return "assistant";
-  // `system`/local_command lines are surfaced as the human's slash-command I/O.
+  
   if (entry.type !== "user") return "user";
 
   const content = entry.message ? entry.message.content : undefined;
@@ -71,15 +40,15 @@ function classifyTranscriptSender(entry, isSubagentFile) {
         : "";
   const lead = text.replace(/^\s+/, "");
 
-  // Harness injections that masquerade as a user line.
+  
   if (entry.isMeta === true) return "system";
   if (lead.startsWith("<task-notification>") || lead.startsWith("<task-notification ")) {
     return "system";
   }
 
-  // In a subagent transcript, a user line with no human prompt provenance is the
-  // task injected by the Task/Agent tool. A real human message to the subagent
-  // (rare, but allowed) carries promptSource/origin and stays "user".
+  
+  
+  
   if (isSubagentFile && entry.promptSource === undefined && entry.origin === undefined) {
     return "orchestrator";
   }
@@ -87,10 +56,6 @@ function classifyTranscriptSender(entry, isSubagentFile) {
   return "user";
 }
 
-/**
- * Read only the first non-empty line from a JSONL file using streaming.
- * Avoids loading the entire file into memory.
- */
 async function readFirstLine(filePath) {
   const rl = readline.createInterface({
     input: fs.createReadStream(filePath, { encoding: "utf8" }),
@@ -110,7 +75,7 @@ router.get("/", (req, res) => {
   const status = req.query.status;
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
   const cwd = req.query.cwd;
-  const sortBy = req.query.sort_by || "time"; // "time", "duration", "price"
+  const sortBy = req.query.sort_by || "time"; 
   const sortDesc = req.query.sort_desc !== "false";
 
   let where = [];
@@ -244,12 +209,12 @@ router.get("/:id", (req, res) => {
   if (!session) {
     return res.status(404).json({ error: { code: "NOT_FOUND", message: "Session not found" } });
   }
-  // Each agent's OWN cost (from its metadata token buckets) so subagent cards on
-  // the session-detail tree show their real cost, not the session total.
+  
+  
   const agents = attachAgentCosts(stmts.listAgentsBySession.all(req.params.id));
   const events = stmts.listEventsBySession.all(req.params.id);
-  // Workflow-tool runs launched within this session (issue #167). Parse the
-  // JSON-blob columns so the client gets arrays, not strings.
+  
+  
   const workflows = stmts.listWorkflowsBySession.all(req.params.id).map((w) => {
     let phases = [];
     let progress = [];
@@ -268,12 +233,6 @@ router.get("/:id", (req, res) => {
   res.json({ session, agents, events, workflows });
 });
 
-/**
- * GET /:id/stats — Aggregated counts for the SessionOverview panel.
- *
- * Returns at-a-glance metrics used by the Agents tab on the Session detail page.
- * All aggregation runs in SQL so we don't ship 14k+ event rows to the client.
- */
 router.get("/:id/stats", (req, res) => {
   const sessionId = req.params.id;
   const session = stmts.getSession.get(sessionId);
@@ -295,7 +254,7 @@ router.get("/:id/stats", (req, res) => {
     cache_write_tokens: 0,
   };
 
-  // Aggregate agent counts by category
+  
   const agentCounts = {
     total: 0,
     main: 0,
@@ -307,10 +266,10 @@ router.get("/:id/stats", (req, res) => {
     agentCounts.total += row.count;
     agentCounts.by_status[row.status] = row.count;
   }
-  // Compactions: count agents whose subagent_type === 'compaction'
+  
   const compactionRow = subagentTypes.find((r) => r.subagent_type === "compaction");
   agentCounts.compaction = compactionRow?.count ?? 0;
-  // Main vs sub: count by type in SQL (avoids loading all agents)
+  
   const typeCounts = db
     .prepare(`SELECT type, COUNT(*) as count FROM agents WHERE session_id = ? GROUP BY type`)
     .all(sessionId);
@@ -377,7 +336,6 @@ router.patch("/:id", (req, res) => {
   res.json({ session });
 });
 
-// GET /:id/transcripts — List available transcript files for a session (main + sub-agents)
 router.get("/:id/transcripts", async (req, res) => {
   const session = stmts.getSession.get(req.params.id);
   if (!session) {
@@ -386,16 +344,16 @@ router.get("/:id/transcripts", async (req, res) => {
 
   const result = [];
 
-  // Query database agent list for db_agent_id association
+  
   const dbAgents = stmts.listAgentsBySession.all(req.params.id) || [];
 
-  // Main session transcript (live, else the durable import-time snapshot)
+  
   const mainPath =
     getTranscriptPath(req.params.id, session.cwd) ||
     findTranscriptPath(req.params.id) ||
     getSnapshotTranscriptPath(req.params.id);
   if (mainPath && fs.existsSync(mainPath)) {
-    // Main agent database ID format: <sessionId>-main
+    
     const mainDbAgent = dbAgents.find((a) => a.type === "main");
     result.push({
       id: "main",
@@ -406,17 +364,17 @@ router.get("/:id/transcripts", async (req, res) => {
     });
   }
 
-  // Sub-agent transcript files
+  
   const encoded = session.cwd ? session.cwd.replace(/[^a-zA-Z0-9]/g, "-") : null;
   const subagentDirs = [];
 
-  // Direct path
+  
   if (encoded) {
     const directDir = path.join(getProjectsDir(), encoded, req.params.id, "subagents");
     if (fs.existsSync(directDir)) subagentDirs.push(directDir);
   }
 
-  // Fallback: scan all project directories when direct path doesn't exist
+  
   if (subagentDirs.length === 0) {
     const projectsDir = path.join(getClaudeHome(), "projects");
     if (fs.existsSync(projectsDir)) {
@@ -427,7 +385,7 @@ router.get("/:id/transcripts", async (req, res) => {
           if (fs.existsSync(candidate)) subagentDirs.push(candidate);
         }
       } catch {
-        /* ignore */
+        
       }
     }
   }
@@ -437,16 +395,16 @@ router.get("/:id/transcripts", async (req, res) => {
       const files = fs.readdirSync(dir);
       for (const file of files) {
         if (!file.endsWith(".jsonl")) continue;
-        // File name format: agent-<shortId>.jsonl
+        
         const shortId = file.replace(/^agent-/, "").replace(/\.jsonl$/, "");
-        // Try reading meta.json for agent type info
+        
         let meta = null;
         const metaPath = path.join(dir, file.replace(".jsonl", ".meta.json"));
         if (fs.existsSync(metaPath)) {
           try {
             meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
           } catch {
-            /* ignore */
+            
           }
         }
 
@@ -456,7 +414,7 @@ router.get("/:id/transcripts", async (req, res) => {
           : meta?.description || meta?.agentType || shortId;
         const transcriptSubagentType = meta?.agentType || null;
 
-        // Read first-line timestamp from JSONL for time-based matching
+        
         let transcriptTimestamp = null;
         try {
           const jsonlPath = path.join(dir, file);
@@ -466,7 +424,7 @@ router.get("/:id/transcripts", async (req, res) => {
             transcriptTimestamp = entry.timestamp || null;
           }
         } catch {
-          /* ignore */
+          
         }
 
         result.push({
@@ -475,27 +433,27 @@ router.get("/:id/transcripts", async (req, res) => {
           type: isCompact ? "compaction" : "subagent",
           subagent_type: transcriptSubagentType,
           has_transcript: true,
-          db_agent_id: null, // matched later after all transcripts are collected
+          db_agent_id: null, 
           _timestamp: transcriptTimestamp,
         });
       }
     } catch {
-      /* ignore */
+      
     }
   }
 
-  // Match database agents to transcripts using best-effort strategies
-  // Strategy: sort both sides by time within each type, then match by index order.
-  // This works because agents and transcripts are created in chronological order.
+  
+  
+  
 
-  // Step 1: Sort all non-main transcripts by timestamp
+  
   for (const t of result) {
     if (t.type === "main") continue;
-    // Store parseable timestamp for sorting
+    
     t._sortTime = t._timestamp ? new Date(t._timestamp).getTime() : Infinity;
   }
 
-  // Step 2: Sort DB agents by started_at within each subagent_type
+  
   const agentsByType = {};
   for (const a of dbAgents) {
     const key = a.subagent_type || a.type;
@@ -506,23 +464,23 @@ router.get("/:id/transcripts", async (req, res) => {
     agentsByType[key].sort((a, b) => (a.started_at || "").localeCompare(b.started_at || ""));
   }
 
-  // Step 3: Sort transcripts by type+time, then match by index within each type group
-  // Group transcripts by their effective type key
+  
+  
   const transcriptsByType = {};
   for (const t of result) {
     if (t.type === "main") continue;
-    // Compaction transcripts have subagent_type=null, use type as key
+    
     const key = t.subagent_type || t.type;
     if (!transcriptsByType[key]) transcriptsByType[key] = [];
     transcriptsByType[key].push(t);
   }
-  // Sort each group by timestamp
+  
   for (const key of Object.keys(transcriptsByType)) {
     transcriptsByType[key].sort((a, b) => (a._sortTime || Infinity) - (b._sortTime || Infinity));
   }
 
-  // Step 4: Match by index within each type group
-  // First try db_agent_id exact match, then fall back to positional match
+  
+  
   for (const key of Object.keys(transcriptsByType)) {
     const tGroup = transcriptsByType[key];
     const aGroup = agentsByType[key] || [];
@@ -531,28 +489,28 @@ router.get("/:id/transcripts", async (req, res) => {
     for (let i = 0; i < tGroup.length; i++) {
       const t = tGroup[i];
 
-      // Try exact db_agent_id match first (for non-compact sub-agents with meta.json data)
+      
       if (t.db_agent_id) {
         usedAgentIds.add(t.db_agent_id);
         continue;
       }
 
-      // Positional match: i-th transcript → i-th agent in the same type group
+      
       if (i < aGroup.length && !usedAgentIds.has(aGroup[i].id)) {
         t.db_agent_id = aGroup[i].id;
         usedAgentIds.add(aGroup[i].id);
       }
-      // If no agent at this position, db_agent_id stays null — client will show "info missing"
+      
     }
   }
 
-  // Clean up internal fields before sending response
+  
   for (const t of result) {
     delete t._timestamp;
     delete t._sortTime;
   }
 
-  // Sort transcripts: main first, then by time ascending (consistent with agents list order)
+  
   result.sort((a, b) => {
     if (a.type === "main") return -1;
     if (b.type === "main") return 1;
@@ -569,15 +527,6 @@ router.get("/:id/transcripts", async (req, res) => {
   res.json({ transcripts: result });
 });
 
-// GET /:id/transcript — Read session JSONL transcript, return structured message list
-// Query params:
-//   agent_id: file-level short ID ("main" or "ad18a79192af10ed1", "acompact-xxx")
-//   run_id: Workflow run id ("wf_...") — disambiguates a workflow inner agent's
-//           nested transcript (subagents/workflows/<run_id>/agent-<agent_id>.jsonl)
-//   limit: max messages to return (default 50, max 200)
-//   after: JSONL line number, only return messages after this line (incremental mode)
-//   before: JSONL line number, only return messages before this line (history mode)
-//   offset: legacy pagination offset (compatible, mutually exclusive with after/before)
 router.get("/:id/transcript", async (req, res) => {
   const session = stmts.getSession.get(req.params.id);
   if (!session) {
@@ -586,18 +535,18 @@ router.get("/:id/transcript", async (req, res) => {
 
   const agentId = req.query.agent_id || null;
   const runId = req.query.run_id || null;
-  // Subagent transcripts (anything but the main session file) need different
-  // sender attribution: their first user line is the orchestrator's task.
+  
+  
   const isSubagentFile = !!(agentId && agentId !== "main");
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const afterLine = req.query.after ? parseInt(req.query.after) : null;
   const beforeLine = req.query.before ? parseInt(req.query.before) : null;
   const offset = parseInt(req.query.offset) || 0;
 
-  // Determine the JSONL file path to read. Prefer the live file under
-  // ~/.claude/projects, then fall back to the dashboard's durable snapshot —
-  // the live file is gone once Claude Code prunes it under cleanupPeriodDays
-  // (default 30 days), but the snapshot taken at import time survives.
+  
+  
+  
+  
   let jsonlPath;
   if (agentId && agentId !== "main") {
     jsonlPath =
@@ -616,12 +565,12 @@ router.get("/:id/transcript", async (req, res) => {
   }
 
   try {
-    // Stream-parse JSONL with early termination for efficiency.
-    // Instead of loading all messages into memory, we use pagination-aware
-    // strategies to stop reading as soon as we have enough data.
+    
+    
+    
     const messages = [];
     let lineNum = 0;
-    let total = 0; // total valid messages seen (exact for early-terminated streams, indicates >= actual)
+    let total = 0; 
     let hasMore = false;
 
     const rl = readline.createInterface({
@@ -629,16 +578,16 @@ router.get("/:id/transcript", async (req, res) => {
       crlfDelay: Infinity,
     });
 
-    // Dedupe state for synthetic rename markers: custom-title lines can repeat
-    // with the same value across a transcript, so only emit when the title
-    // actually changes from the last one we surfaced.
+    
+    
+    
     let lastRenameTitle = null;
 
-    // Helper: parse a JSONL line into a message object, or null if not a displayable message
+    
     function parseMessage(entry, num) {
-      // /rename, `claude -n`, picker Ctrl+R → custom-title metadata line. These
-      // commands produce no user/assistant turn, so without this they'd be
-      // invisible. Surface a compact "renamed" marker instead.
+      
+      
+      
       if (entry.type === "custom-title") {
         const title = typeof entry.customTitle === "string" ? entry.customTitle.trim() : "";
         if (!title || title === lastRenameTitle) return null;
@@ -653,21 +602,21 @@ router.get("/:id/transcript", async (req, res) => {
         };
       }
 
-      // Local slash-command I/O. Newer Claude Code builds write the command
-      // invocation and its captured output as `system`/`local_command` lines
-      // with the TUI markup in a top-level `content` string (older builds used
-      // `user` messages, handled below). Surface those as user-side text so the
-      // client's tuiSegments parser renders the command pill + stdout/stderr
-      // (e.g. /color → "/color" pill + "Session color set to: cyan"). Skip
-      // every other system subtype (turn_duration, stop_hook_summary, …) and
-      // empty local_command lines (e.g. /clear writes a content-less one).
+      
+      
+      
+      
+      
+      
+      
+      
       if (entry.type === "system") {
         if (entry.subtype !== "local_command") return null;
         const sysText = typeof entry.content === "string" ? entry.content : "";
         if (!sysText.trim()) return null;
         return {
           type: "user",
-          sender: "user", // local slash-command I/O is the human's own action
+          sender: "user", 
           timestamp: entry.timestamp || null,
           content: [{ type: "text", text: truncate(sysText, 10240) }],
           line: num,
@@ -752,7 +701,7 @@ router.get("/:id/transcript", async (req, res) => {
     }
 
     if (afterLine !== null) {
-      // Incremental mode: skip lines until after afterLine, collect up to limit, then stop
+      
       let foundStart = false;
       for await (const line of rl) {
         lineNum++;
@@ -775,19 +724,19 @@ router.get("/:id/transcript", async (req, res) => {
         total++;
         messages.push(message);
         if (messages.length >= limit) {
-          // Check if there's at least one more valid message
+          
           hasMore = true;
           rl.close();
           rl.removeAllListeners();
           break;
         }
       }
-      // If we exhausted the stream without hitting limit, hasMore stays false
+      
     } else if (beforeLine !== null) {
-      // History mode: collect messages with line < beforeLine using a sliding window.
-      // hasMore here means "more *older* messages exist before what we're returning"
-      // — the only way to know that is if we shifted any out of the window
-      // (total > limit). Hitting the boundary tells us nothing about older history.
+      
+      
+      
+      
       for await (const line of rl) {
         lineNum++;
         if (!line.trim()) continue;
@@ -799,7 +748,7 @@ router.get("/:id/transcript", async (req, res) => {
         }
         if (!TRANSCRIPT_RENDER_TYPES.has(entry.type)) continue;
         if (lineNum >= beforeLine) {
-          // Reached the boundary — stop reading
+          
           rl.close();
           rl.removeAllListeners();
           break;
@@ -809,14 +758,14 @@ router.get("/:id/transcript", async (req, res) => {
         if (!message) continue;
         total++;
         messages.push(message);
-        // Sliding window: only keep the last `limit` messages
+        
         if (messages.length > limit) {
           messages.shift();
         }
       }
       if (total > limit) hasMore = true;
     } else if (offset > 0) {
-      // Legacy offset pagination: skip `offset` valid messages, then collect `limit`
+      
       let skipped = 0;
       for await (const line of rl) {
         lineNum++;
@@ -839,14 +788,14 @@ router.get("/:id/transcript", async (req, res) => {
         }
         messages.push(message);
         if (messages.length >= limit) {
-          hasMore = true; // assume more exist
+          hasMore = true; 
           rl.close();
           rl.removeAllListeners();
           break;
         }
       }
     } else {
-      // Default: return the latest N messages (chat-flow mode) using a sliding window
+      
       for await (const line of rl) {
         lineNum++;
         if (!line.trim()) continue;
@@ -862,19 +811,19 @@ router.get("/:id/transcript", async (req, res) => {
         if (!message) continue;
         total++;
         messages.push(message);
-        // Sliding window: only keep the last `limit` messages in memory
+        
         if (messages.length > limit) {
           messages.shift();
         }
       }
-      // If we shifted any messages out, there are more
+      
       hasMore = total > limit;
     }
 
     const lastLine = messages.length > 0 ? messages[messages.length - 1].line : 0;
     const firstLine = messages.length > 0 ? messages[0].line : 0;
 
-    // Remove internal line field from messages
+    
     for (const m of messages) {
       delete m.line;
     }
@@ -904,5 +853,5 @@ function truncateObj(obj, maxLen) {
 }
 
 module.exports = router;
-// Exported for unit tests — sender attribution is correctness-critical.
+
 module.exports.classifyTranscriptSender = classifyTranscriptSender;

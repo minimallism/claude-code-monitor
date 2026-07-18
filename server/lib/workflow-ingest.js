@@ -1,44 +1,6 @@
-/**
- * Workflow-tool run ingestion.
- *
- * The Claude Code "Workflow" tool (and self-paced /loop) spawn fleets of inner
- * sub-agents that emit NO hooks — so hook-based ingestion can never see them.
- * Everything lives on disk under the launching session's transcript folder:
- *
- *   <projects>/<enc-cwd>/<sessionId>/
- *     workflows/
- *       scripts/<name>-wf_<runId>.js          ← written at LAUNCH
- *       wf_<runId>.json                       ← run journal, written at COMPLETION
- *     subagents/workflows/<runId>/
- *       agent-<agentId>.jsonl                 ← one transcript per inner agent
- *       agent-<agentId>.meta.json
- *
- * The run journal is the source of truth for a completed run: identity,
- * lifecycle, aggregates (agentCount/totalTokens/totalToolCalls), phases[], and
- * workflowProgress[] — a MIXED log of `type:"workflow_phase"` markers and
- * `type:"workflow_agent"` entries. Each workflow_agent entry carries agentId,
- * state ("done"/"error"/…), label, phaseTitle, tokens, toolCalls, durationMs,
- * etc., and its agentId is the EXACT agent-<agentId>.jsonl basename in the
- * per-run nested dir above. Because the journal is terminal-only, a running
- * workflow is detected from its launch script and replaced by the journal
- * record on completion (idempotent upsert by run_id).
- *
- * Inner agents are linked into the existing agents table via the same
- * `${sessionId}-jsonl-<agentId>` id scheme that importSubagentFromJsonl uses,
- * so ingestion CONVERGES with any prior subagent import (no duplicate rows).
- * Per-agent token/tool/duration metrics come from the journal's progress[]
- * JSON — this module never writes token_usage, so it cannot double-count.
- *
- * All functions are fail-safe: a malformed/partial journal throws only locally
- * and is skipped; ingestion never blocks or breaks hook handling.
-
- */
-
 const fs = require("fs");
 const path = require("path");
 
-// Lazy-required to avoid a require cycle (import-history → db → … ) and to keep
-// startup cheap; mirrors how server/index.js lazy-requires import helpers.
 function importHistory() {
   return require("../../scripts/import-history");
 }
@@ -49,19 +11,12 @@ function getClaudeHomeLib() {
   return claudeHome;
 }
 
-/**
- * Canonical run id derived from a journal/script filename. Both
- * `wf_<runId>.json` and `<name>-wf_<runId>.js` reduce to the same `wf_<runId>`
- * token so a launch-detected "running" row and its later journal reconcile on
- * the same key.
- */
 function extractRunId(filename) {
   const base = path.basename(filename).replace(/\.(json|js)$/i, "");
   const m = base.match(/wf_[A-Za-z0-9_-]+$/);
   return m ? m[0] : base;
 }
 
-/** Workflow name from a launch-script basename: strip the `-wf_<runId>` tail. */
 function nameFromScript(filename) {
   const base = path.basename(filename).replace(/\.js$/i, "");
   return base.replace(/-?wf_[A-Za-z0-9_-]+$/, "") || base;
@@ -79,7 +34,6 @@ function toIso(value) {
   return String(value);
 }
 
-/** Map a journal progress `state` to an agents.status value. */
 function mapState(state) {
   switch (String(state || "").toLowerCase()) {
     case "error":
@@ -100,8 +54,6 @@ function mapState(state) {
   }
 }
 
-// Token fields carried on a parsed-subagent bucket (camelCase, matching
-// writeSessionTokens). Used to fold inner-agent usage into the session's cost.
 const TOKEN_FIELDS = [
   "input",
   "output",
@@ -113,15 +65,6 @@ const TOKEN_FIELDS = [
   "codeExec",
 ];
 
-/**
- * Merge a parsed agent's tokensByModel into a session-level accumulator, keyed
- * by (model, speed, geo) with the service_tier forced to "workflow". This
- * namespaces workflow spend into its own token_usage bucket so it never
- * collides with — or clobbers — the main-transcript writer's rows, while still
- * being summed per-model by the cost calculator. Inner agents are sidechain
- * contexts whose usage is NOT in the parent transcript, so this is additive,
- * not double-counting (same model as combineSessionTokens for subagents).
- */
 function mergeWorkflowTokens(dst, src) {
   for (const b of Object.values(src || {})) {
     if (!b || !b.model) continue;
@@ -139,10 +82,6 @@ function mergeWorkflowTokens(dst, src) {
   }
 }
 
-/**
- * Resolve a session's transcript JSONL path from a session-like row. Prefers an
- * explicit transcript_path; otherwise derives it from (id, cwd) via claude-home.
- */
 function resolveTranscriptPath(session) {
   if (session && session.transcript_path) return session.transcript_path;
   if (session && session.id && session.cwd) {
@@ -155,15 +94,6 @@ function resolveTranscriptPath(session) {
   return null;
 }
 
-/**
- * Locate a session's workflow artifacts from its transcript JSONL path.
- * Workflows live at `<dir>/<sessionId>/workflows/` next to
- * `<dir>/<sessionId>.jsonl`; inner-agent transcripts are resolved per-run via
- * agentsDirForRun(sessionDir, runId).
- *
- * @returns {{ sessionDir: string|null, workflowsDir: string|null,
- *             journals: string[], scripts: string[] }}
- */
 function findSessionWorkflows(transcriptPath) {
   const empty = {
     sessionDir: null,
@@ -193,12 +123,12 @@ function findSessionWorkflows(transcriptPath) {
       }
     }
   } catch {
-    /* non-fatal — partial dir during a live run */
+    
   }
 
-  // Live per-run dirs: <sessionDir>/subagents/workflows/<runId>/ — present while
-  // a workflow is still running (journal.jsonl + growing agent-*.jsonl), before
-  // the terminal wf_<runId>.json journal is written.
+  
+  
+  
   const liveRuns = [];
   try {
     const base = path.join(sessionDir, "subagents", "workflows");
@@ -208,22 +138,16 @@ function findSessionWorkflows(transcriptPath) {
       }
     }
   } catch {
-    /* non-fatal */
+    
   }
 
   return { sessionDir, workflowsDir, journals, scripts, liveRuns };
 }
 
-/**
- * Per-run inner-agent transcript directory. The Workflow tool writes each
- * fleet's agents under `<sessionId>/subagents/workflows/<runId>/agent-*.jsonl`
- * (NOT the session's top-level subagents/ dir).
- */
 function agentsDirForRun(sessionDir, runId) {
   return path.join(sessionDir, "subagents", "workflows", runId);
 }
 
-/** Read + normalize a run journal file. Returns null on any parse failure. */
 function parseWorkflowJournal(journalPath) {
   let raw;
   try {
@@ -273,19 +197,15 @@ function parseWorkflowJournal(journalPath) {
   };
 }
 
-/**
- * Ingest one parsed journal: upsert the workflow row, then link/create each
- * inner agent. Returns the upserted workflow row, or null on failure.
- */
 async function ingestWorkflowJournal(dbModule, sessionId, journal, opts = {}) {
   const { stmts } = dbModule;
   const mainAgentId = `${sessionId}-main`;
   const ih = importHistory();
-  // Inner-agent transcripts live in a per-run nested dir, not the session's
-  // top-level subagents/. opts.sessionDir is the session transcript folder.
+  
+  
   const agentDir = opts.sessionDir ? agentsDirForRun(opts.sessionDir, journal.runId) : null;
-  // Accumulate inner-agent token usage (real input/output/cache split from each
-  // transcript) so the run's spend can be folded into the session's cost.
+  
+  
   const runTokens = {};
 
   stmts.upsertWorkflow.run(
@@ -308,8 +228,8 @@ async function ingestWorkflowJournal(dbModule, sessionId, journal, opts = {}) {
     "journal"
   );
 
-  // Only `workflow_agent` entries are real agents; `workflow_phase` entries are
-  // phase markers (kept in progress[] for the phase chips, skipped here).
+  
+  
   const agentEntries = journal.progress.filter(
     (e) => e && e.type === "workflow_agent" && e.agentId
   );
@@ -318,16 +238,16 @@ async function ingestWorkflowJournal(dbModule, sessionId, journal, opts = {}) {
     const jsonlId = `${sessionId}-jsonl-${agentId}`;
     const status = mapState(entry.state);
     const phase = entry.phaseTitle || null;
-    // subagent_type: prefer the label's prefix (e.g. "scout:starship" → "scout")
-    // for nicer grouping; otherwise the generic workflow-subagent type.
+    
+    
     const subType =
       (entry.label && entry.label.includes(":") ? entry.label.split(":")[0] : null) ||
       entry.agentType ||
       "workflow-subagent";
 
-    // Prefer parsing the real transcript so tool events + metadata land via the
-    // shared importer (idempotent, dedups by tool_use_id). Fall back to a
-    // minimal row built from the journal entry if the file is gone.
+    
+    
+    
     let parsed = null;
     if (agentDir) {
       const subPath = path.join(agentDir, `agent-${agentId}.jsonl`);
@@ -363,10 +283,10 @@ async function ingestWorkflowJournal(dbModule, sessionId, journal, opts = {}) {
           })
         );
       }
-      // Stamp the workflow linkage + journal-authoritative status/phase.
+      
       stmts.setAgentWorkflow.run(journal.runId, phase, status, jsonlId);
     } catch {
-      /* one bad agent must not abort the whole run ingest */
+      
     }
   }
 
@@ -402,16 +322,6 @@ function bucketTotal(tokensByModel) {
   return n;
 }
 
-/**
- * Live ingest for a RUNNING workflow — before its terminal wf_<runId>.json
- * exists. Builds progress[] + aggregates in real time from the streaming
- * `<runDir>/journal.jsonl` (started/result events per agent) plus the growing
- * `<runDir>/agent-<id>.jsonl` transcripts (real token/tool/duration usage via
- * parseSubagentFile). Phase/label aren't available live (those come from the
- * terminal journal), so phaseTitle is null and label falls back to the agent's
- * prompt. The fast poll re-runs this as the files grow, so tokens/tools/agents
- * update live. Returns { row, tokens } or null.
- */
 async function ingestLiveWorkflow(dbModule, sessionId, sessionDir, runId, scriptPath) {
   const { stmts } = dbModule;
   const mainAgentId = `${sessionId}-main`;
@@ -419,7 +329,7 @@ async function ingestLiveWorkflow(dbModule, sessionId, sessionDir, runId, script
   const dir = agentsDirForRun(sessionDir, runId);
   if (!fs.existsSync(dir)) return null;
 
-  // Streaming journal: which agents started / finished (+ their result payload).
+  
   const started = new Set();
   const doneResults = new Map();
   try {
@@ -439,7 +349,7 @@ async function ingestLiveWorkflow(dbModule, sessionId, sessionDir, runId, script
       }
     }
   } catch {
-    /* ignore */
+    
   }
 
   let agentFiles = [];
@@ -521,11 +431,11 @@ async function ingestLiveWorkflow(dbModule, sessionId, sessionDir, runId, script
       }
       stmts.setAgentWorkflow.run(runId, null, mapState(state), jsonlId);
     } catch {
-      /* one bad agent must not abort the live ingest */
+      
     }
   }
 
-  // Agents that have a `started` event but no transcript file yet (queued).
+  
   for (const agentId of started) {
     if (agentFiles.includes(`agent-${agentId}.jsonl`)) continue;
     progress.push({
@@ -547,7 +457,7 @@ async function ingestLiveWorkflow(dbModule, sessionId, sessionDir, runId, script
     try {
       startedAtIso = new Date(fs.statSync(scriptPath).mtimeMs).toISOString();
     } catch {
-      /* ignore */
+      
     }
   }
   const durationMs = earliest && latest ? latest - earliest : null;
@@ -574,12 +484,6 @@ async function ingestLiveWorkflow(dbModule, sessionId, sessionDir, runId, script
   return { row: stmts.getWorkflow.get(runId), tokens: runTokens };
 }
 
-/**
- * Detect running workflows: a launch script whose journal hasn't landed yet.
- * Upsert a minimal `running` row so the UI shows it before completion. Skips
- * runs that already have a completed/error row (the journal won.) Returns the
- * upserted rows.
- */
 function detectRunningWorkflows(dbModule, sessionId, paths, handledRunIds) {
   const { stmts } = dbModule;
   const changed = [];
@@ -587,7 +491,7 @@ function detectRunningWorkflows(dbModule, sessionId, paths, handledRunIds) {
     const runId = extractRunId(scriptPath);
     if (!runId || handledRunIds.has(runId)) continue;
     const existing = stmts.getWorkflow.get(runId);
-    if (existing && existing.status !== "running") continue; // journal already won
+    if (existing && existing.status !== "running") continue; 
 
     let startedAt = null;
     let agentCount = 0;
@@ -595,9 +499,9 @@ function detectRunningWorkflows(dbModule, sessionId, paths, handledRunIds) {
       const st = fs.statSync(scriptPath);
       startedAt = new Date(st.mtimeMs).toISOString();
     } catch {
-      /* ignore */
+      
     }
-    // Best-effort fleet size: inner-agent transcripts in this run's nested dir.
+    
     try {
       const agentDir = paths.sessionDir ? agentsDirForRun(paths.sessionDir, runId) : null;
       if (agentDir && fs.existsSync(agentDir)) {
@@ -606,7 +510,7 @@ function detectRunningWorkflows(dbModule, sessionId, paths, handledRunIds) {
           .filter((f) => f.startsWith("agent-") && f.endsWith(".jsonl")).length;
       }
     } catch {
-      /* ignore */
+      
     }
 
     stmts.upsertWorkflow.run(
@@ -633,14 +537,6 @@ function detectRunningWorkflows(dbModule, sessionId, paths, handledRunIds) {
   return changed;
 }
 
-/**
- * Ingest every workflow artifact for one session: completed journals first,
- * then running detection for journal-less launch scripts.
- *
- * @param {object} dbModule - { db, stmts }
- * @param {{id: string, transcript_path?: string, cwd?: string}} session
- * @returns {Promise<object[]>} the workflow rows that were inserted/updated
- */
 async function ingestWorkflowsForSession(dbModule, session) {
   const sessionId = session && session.id;
   if (!sessionId) return [];
@@ -654,12 +550,12 @@ async function ingestWorkflowsForSession(dbModule, session) {
 
   const changed = [];
   const journalRunIds = new Set();
-  // Session-wide accumulator of inner-agent token usage across all runs, so the
-  // session's cost includes workflow spend. Recomputed in full each call (all
-  // journals are re-parsed) → writeSessionTokens replace semantics make it
-  // idempotent (no double-count across re-ingests).
+  
+  
+  
+  
   const workflowTokens = {};
-  // Map runId → its launch script (so a journal row records script_path too).
+  
   const scriptByRun = new Map();
   for (const s of paths.scripts) scriptByRun.set(extractRunId(s), s);
 
@@ -675,15 +571,15 @@ async function ingestWorkflowsForSession(dbModule, session) {
       if (res && res.row) changed.push(res.row);
       if (res && res.tokens) mergeWorkflowTokens(workflowTokens, res.tokens);
     } catch {
-      /* skip malformed journal */
+      
     }
   }
 
-  // Live runs (no terminal journal yet): build real-time progress + tokens from
-  // the streaming journal.jsonl + growing agent transcripts.
+  
+  
   const liveHandled = new Set();
   for (const lr of paths.liveRuns) {
-    if (journalRunIds.has(lr.runId)) continue; // terminal journal is authoritative
+    if (journalRunIds.has(lr.runId)) continue; 
     try {
       const res = await ingestLiveWorkflow(
         dbModule,
@@ -698,7 +594,7 @@ async function ingestWorkflowsForSession(dbModule, session) {
       }
       if (res && res.tokens) mergeWorkflowTokens(workflowTokens, res.tokens);
     } catch {
-      /* non-fatal — partial live run */
+      
     }
   }
 
@@ -706,30 +602,23 @@ async function ingestWorkflowsForSession(dbModule, session) {
     const handled = new Set([...journalRunIds, ...liveHandled]);
     changed.push(...detectRunningWorkflows(dbModule, sessionId, paths, handled));
   } catch {
-    /* non-fatal */
+    
   }
 
-  // Fold the workflow fleet's token usage into the session cost under a
-  // namespaced `workflow` service_tier (isolated from the main-transcript
-  // writer's buckets). getTokensBySession + calculateCost sum it per model.
+  
+  
+  
   try {
     if (Object.keys(workflowTokens).length > 0) {
       importHistory().writeSessionTokens(dbModule, sessionId, workflowTokens);
     }
   } catch {
-    /* non-fatal — cost folding must never break ingestion */
+    
   }
 
   return changed;
 }
 
-/**
- * One-time backfill: ingest workflow artifacts for every recorded session.
- * Used by the legacy auto-import on first boot so historical completed
- * workflows surface. Idempotent and fail-safe per session.
- *
- * @returns {Promise<{sessions: number, workflows: number}>}
- */
 async function ingestAllWorkflows(dbModule) {
   const { db } = dbModule;
   let rows = [];
@@ -752,20 +641,12 @@ async function ingestAllWorkflows(dbModule) {
         workflows += changed.length;
       }
     } catch {
-      /* non-fatal — skip this session */
+      
     }
   }
   return { sessions, workflows };
 }
 
-/**
- * Cheap change-fingerprint for a session's workflow artifacts: the newest mtime
- * across its journals, launch scripts, and — crucially for real-time — the
- * streaming files of any RUNNING run (journal.jsonl + agent-*.jsonl), so the
- * poll re-ingests as a live workflow's tokens/agents grow. Per-file statting is
- * bounded to runs without a terminal journal; completed runs contribute only
- * their (stable) terminal-journal mtime. Returns 0 when nothing exists.
- */
 function workflowsMaxMtime(transcriptPath) {
   const { journals, scripts, liveRuns } = findSessionWorkflows(transcriptPath);
   let max = 0;
@@ -774,19 +655,19 @@ function workflowsMaxMtime(transcriptPath) {
       const m = fs.statSync(p).mtimeMs;
       if (m > max) max = m;
     } catch {
-      /* ignore */
+      
     }
   };
   for (const p of [...journals, ...scripts]) stat(p);
   const completed = new Set(journals.map(extractRunId));
   for (const lr of liveRuns) {
-    if (completed.has(lr.runId)) continue; // terminal journal mtime already counted
+    if (completed.has(lr.runId)) continue; 
     try {
       for (const f of fs.readdirSync(lr.dir)) {
         if (f.endsWith(".jsonl")) stat(path.join(lr.dir, f));
       }
     } catch {
-      /* ignore */
+      
     }
   }
   return max;
