@@ -4,7 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-    <link rel="apple-touch-icon" href="favicon.svg" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Claude Code Agent Monitor - real-time dashboard for Claude Code</title>
@@ -12,44 +11,7 @@
       name="description"
       content="Real-time local dashboard for Claude Code: sessions, kanban, analytics, cost tracking, run / resume Claude from your browser, and a 12-tab inspector for every plugin, skill, hook, and setting."
     />
-    <meta
-      name="keywords"
-      content="Claude Code, dashboard, agent monitor, real-time, MCP, plugin marketplace, hooks, sessions, analytics, workflow visualization, cost tracking, Run Claude, claude config explorer"
-    />
-    <meta name="robots" content="index, follow" />
     <meta name="theme-color" content="#6366f1" />
-
-    
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Claude Code Agent Monitor" />
-    <meta property="og:title" content="Claude Code Agent Monitor - real-time dashboard for Claude Code" />
-    <meta
-      property="og:description"
-      content="Real-time local dashboard for Claude Code with sessions, analytics, workflows, plugin marketplace, MCP server, in-browser Run page, and a 12-tab Claude Config Explorer."
-    />
-
-    
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Claude Code Agent Monitor" />
-    <meta
-      name="twitter:description"
-      content="Real-time local dashboard for Claude Code with 13 pages, plugin marketplace, MCP server, in-browser Run page and 12-tab Config Explorer."
-    />
-
-    
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "WebApplication",
-        "name": "Claude Code Agent Monitor",
-        "description": "Real-time local dashboard for Claude Code with sessions, analytics, workflows, plugin marketplace, MCP server, in-browser Run page for spawning Claude subprocesses, and a 12-tab Claude Config Explorer.",
-        "applicationCategory": "DeveloperApplication",
-        "operatingSystem": "Windows, macOS, Linux",
-        "softwareVersion": "1.0.0",
-        "license": "https://opensource.org/licenses/MIT",
-        "codeRepository": "https://github.com/minimallism/agent-monitor"
-      }
-    </script>
 
     <link rel="stylesheet" href="fonts/fonts.css" />
 
@@ -833,7 +795,7 @@
         }
         .install-text h3 { font-size: 24px; }
         .install-text .btn { margin-right: 8px; margin-bottom: 8px; white-space: nowrap; }
-        .values-grid, .archetype-grid, .how-grid, .pages-grid, .stack-grid { gap: 14px; }
+        .values-grid, .archetype-grid, .how-grid, .stack-grid { gap: 14px; }
         .archetype { padding: 22px 20px; }
         .how-step { padding: 22px 20px; }
         .faq-item summary { padding: 18px 20px; font-size: 14.5px; }
@@ -903,14 +865,7 @@
         .values-grid, .archetype-grid, .how-grid {
           grid-template-columns: 1fr;
         }
-        .pages-grid { grid-template-columns: 1fr; }
-        .page-card {
-          padding: 18px 16px 16px;
-          gap: 8px;
-        }
-        .page-card-header { flex-wrap: wrap; gap: 8px; }
-        .page-card-name { font-size: 14px; }
-        .page-card-desc { font-size: 13px; }
+
         .stack-grid { grid-template-columns: repeat(2, 1fr); }
         .archetype { padding: 20px 18px; }
         .archetype h4 { font-size: 16.5px; }
@@ -965,7 +920,6 @@
         .archetype:hover,
         .how-step:hover,
         .stack-item:hover,
-        .page-card:hover,
         .nav-link:hover,
         .nav-cta:hover,
         .btn:hover {
@@ -1458,8 +1412,6 @@
               <code>/api/redoc</code> - both self-hosted alongside the dashboard, fully offline.
             </p>
           </div>
-
-          div>
           <div class="feature-card">
             <div class="feature-icon emerald">📥</div>
             <h3>History import &amp; backfill</h3>
@@ -1685,8 +1637,7 @@
             <h3>Four commands.</h3>
             <p>
               No accounts, no cloud, no telemetry. Everything stays on your machine. Existing
-              sessions in <code>~/.claude/projects</code> import on first start. Prefer a
-             .
+              sessions in <code>~/.claude/projects</code> import on first start.
             </p>
 
             <a
@@ -1716,38 +1667,23 @@
                 <span class="copy-label">Copy</span>
               </button>
             </div>
-            <pre class="code-block" id="install-block"><span class="comment"># Clone &amp; install</span>
-<span class="prompt">$</span>git clone https://github.com/minimallism/agent-monitor
-<span class="prompt">$</span><span class="str">cd</span> Claude-Code-Agent-Monitor
-<span class="prompt">$</span>npm run setup
+            <pre class="code-block" id="install-block"><span># Clone &amp; install</span>
+<span>$</span>git clone https://github.com/minimallism/agent-monitor
+<span>$</span><span>cd</span> Claude-Code-Agent-Monitor
+<span>$</span>npm run setup
 
-<span class="comment"># Install the hooks (on the HOST — never inside a container, #193)</span>
-<span class="prompt">$</span>npm run install-hooks
+<span># Install the hooks (on the HOST — never inside a container, #193)</span>
+<span>$</span>npm run install-hooks
 
-<span class="comment"># Start the dashboard (server + Vite)</span>
-<span class="prompt">$</span>npm run dev
+<span># Start the dashboard (server + Vite)</span>
+<span>$</span>npm run dev
 
-<span class="comment"># Then open</span>
-<span class="prompt">→</span>http://localhost:4820
+<span># Then open</span>
+<span>→</span>http://localhost:4820
 </pre>
           </div>
         </div>
 
-      
-      <section id="pages" class="container">
-        <div class="reveal">
-          <div class="section-eyebrow">Tour the dashboard</div>
-          <h2 class="section-title">A purpose-built page for every job.</h2>
-          <p class="section-lead">
-            Each route is its own focused workspace - kanban for at-a-glance status, sessions for
-            drill-down, analytics for trends, run for live spawning. They all sit on the same
-            hook-driven event store, so what you see anywhere is the same source of truth.
-          </p>
-        </div>
-
-      </section>
-
-      
       <section id="stack" class="container">
         <div class="reveal">
           <div class="section-eyebrow">Built with</div>
@@ -1790,7 +1726,6 @@
           <div class="stack-item"><div class="stack-item-icon">🤖</div><div class="stack-item-name">Claude CLI</div><div class="stack-item-desc">spawned via Run page</div></div>
           <div class="stack-item"><div class="stack-item-icon">🔔</div><div class="stack-item-name">web-push</div><div class="stack-item-desc">VAPID push library</div></div>
           <div class="stack-item"><div class="stack-item-icon">📄</div><div class="stack-item-name">swagger-ui-express</div><div class="stack-item-desc">interactive API docs</div></div>
-          <div class="stack-item"><div class="stack-item-icon">📤</div><div class="stack-item-name">multer</div><div class="stack-item-desc">multipart upload</div></div>
           <div class="stack-item"><div class="stack-item-icon">🗜️</div><div class="stack-item-name">adm-zip</div><div class="stack-item-desc">zip extract (bombs-safe)</div></div>
           <div class="stack-item"><div class="stack-item-icon">🪢</div><div class="stack-item-name">tar</div><div class="stack-item-desc">tar/tgz extract</div></div>
           <div class="stack-item"><div class="stack-item-icon">🌍</div><div class="stack-item-name">cors</div><div class="stack-item-desc">Express CORS</div></div>
