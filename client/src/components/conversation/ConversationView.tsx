@@ -1,3 +1,19 @@
+/**
+ * 会话详情页的对话视图组件。
+ *
+ * 功能：
+ * 1. 加载并展示某个 session（或子 agent）的 JSONL 转录本消息。
+ * 2. 支持切换 main/subagent 转录本。
+ * 3. 通过 3 秒轮询 + SSE 事件增量拉取新消息，实现准实时更新。
+ * 4. 支持向上滚动加载历史消息、向下滚动自动吸底、新消息提示。
+ *
+ * 关键设计：
+ * - lastLineRef / firstLineRef 记录已加载消息在 JSONL 中的行号范围，
+ *   增量请求使用 after/before 参数避免重复传输。
+ * - fetchingRef + pendingFetchRef 防止并发请求导致的消息乱序。
+ * - isAtBottomRef 跟踪滚动位置，只在底部时自动滚动，避免打扰用户阅读历史。
+ */
+
 import { useEffect, useState, useCallback, useRef } from "react";
 import { ChevronDown, Loader2, ArrowDown } from "lucide-react";
 import { api } from "../../lib/api";
@@ -5,8 +21,10 @@ import { eventBus } from "../../lib/eventBus";
 import { MessageList } from "./MessageList";
 import type { TranscriptMessage, TranscriptInfo, WSMessage } from "../../lib/types";
 
+// 消息增量轮询间隔。
 const POLL_INTERVAL_MS = 3000;
 
+// 转录本列表（main + subagents）刷新间隔。
 const TRANSCRIPTS_REFRESH_MS = 15000;
 
 interface ConversationViewProps {
@@ -33,20 +51,16 @@ export function ConversationView({ sessionId, initialTranscriptId, onTotalChange
   const [transcripts, setTranscripts] = useState<TranscriptInfo[]>([]);
   const [showNewMsg, setShowNewMsg] = useState(false);
 
-  
+  // lastLineRef / firstLineRef：已加载消息在 JSONL 中的最大/最小行号，用于增量分页。
   const lastLineRef = useRef(0);
   const firstLineRef = useRef(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
+  // fetchingRef / pendingFetchRef：防止并发拉取，确保一次只发一个增量请求。
   const fetchingRef = useRef(false);
-  
-  
-  
   const pendingFetchRef = useRef(false);
-  
-  
-  
-  
+
+  // 定期刷新转录本列表（子 agent 可能动态增加）。
   useEffect(() => {
     let cancelled = false;
     async function loadTranscripts() {
@@ -55,7 +69,7 @@ export function ConversationView({ sessionId, initialTranscriptId, onTotalChange
         if (cancelled) return;
         setTranscripts(result.transcripts);
       } catch {
-        
+        // 转录本列表刷新失败不影响当前对话展示。
       }
     }
     loadTranscripts();
@@ -66,14 +80,14 @@ export function ConversationView({ sessionId, initialTranscriptId, onTotalChange
     };
   }, [sessionId]);
 
-  
+  // 外部传入 initialTranscriptId 变化时同步更新下拉框。
   useEffect(() => {
     if (initialTranscriptId != null) {
       setSelectedTranscript(initialTranscriptId);
     }
   }, [initialTranscriptId]);
 
-  
+  // 切换 session 或子 agent 转录本时，重新全量加载对应转录本。
   useEffect(() => {
     let cancelled = false;
 
@@ -115,10 +129,11 @@ export function ConversationView({ sessionId, initialTranscriptId, onTotalChange
   
   
   
+  // 增量拉取新消息。首次调用视为 bootstrap（全量加载最近 50 条），
+  // 后续使用 after=lastLineRef.current 只获取新增行。
   const fetchNewMessages = useCallback(async () => {
     if (fetchingRef.current) {
-      
-      
+      // 如果正在拉取，把新请求标记为 pending，在完成后自动重试一次。
       pendingFetchRef.current = true;
       return;
     }
@@ -137,8 +152,7 @@ export function ConversationView({ sessionId, initialTranscriptId, onTotalChange
       lastLineRef.current = result.last_line;
 
       if (wasBootstrap) {
-        
-        
+        // bootstrap 时直接替换消息，并同步 first_line 与 has_more。
         setMessages(result.messages);
         firstLineRef.current = result.first_line;
         setHasMore(result.has_more);
@@ -147,29 +161,24 @@ export function ConversationView({ sessionId, initialTranscriptId, onTotalChange
       }
       setTotal(result.total);
 
-      
+      // 若用户正在底部，自动滚动；否则显示"新消息"提示。
       if (isAtBottomRef.current) {
         scrollToBottom();
       } else {
         setShowNewMsg(true);
       }
     } catch {
-      
+      // 增量拉取失败静默处理，下次轮询/SSE 会重试。
     } finally {
       fetchingRef.current = false;
-      
       if (pendingFetchRef.current) {
         pendingFetchRef.current = false;
-        
         setTimeout(() => fetchNewMessages(), 0);
       }
     }
-    
   }, [sessionId, selectedTranscript]);
 
-  
-  
-  
+  // 订阅 eventBus：当当前 session 有新事件时立即增量拉取消息。
   useEffect(() => {
     const unsubscribe = eventBus.subscribe((msg: WSMessage) => {
       if (msg.type !== "new_event") return;
@@ -180,20 +189,14 @@ export function ConversationView({ sessionId, initialTranscriptId, onTotalChange
     return unsubscribe;
   }, [sessionId, fetchNewMessages]);
 
-  
-  
-  
+  // SSE 重连成功后，立即拉取离线期间可能漏掉的消息。
   useEffect(() => {
     return eventBus.onConnection((connected) => {
       if (connected) fetchNewMessages();
     });
   }, [fetchNewMessages]);
 
-  
-  
-  
-  
-  
+  // 页面可见时启动 3 秒轮询；切到后台时停止，节省资源。
   useEffect(() => {
     let interval: number | null = null;
     function start() {

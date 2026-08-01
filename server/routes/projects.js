@@ -1,3 +1,10 @@
+/**
+ * 项目（Project）列表 API。
+ *
+ * 一个 project 对应一个工作目录（cwd）。
+ * 该路由聚合每个 cwd 下的会话数量、活跃会话数、token 总量、磁盘占用和最后活动时间。
+ */
+
 const fs = require("fs");
 const path = require("path");
 const { Router } = require("express");
@@ -6,6 +13,16 @@ const { getProjectsDir } = require("../lib/claude-home");
 
 const router = Router();
 
+/**
+ * GET /api/projects
+ *
+ * 返回所有磁盘上仍然存在的 project 列表。
+ *
+ * 注意：
+ * - 先按 cwd 分组统计会话数。
+ * - 再单独查询每个 cwd 的 token 总量（避免 JOIN 导致大数据量时性能下降）。
+ * - disk_usage 递归计算该项目在 ~/.claude/projects/<encoded> 下占用的字节数。
+ */
 router.get("/", (req, res) => {
   const rows = db
     .prepare(
@@ -55,6 +72,9 @@ router.get("/", (req, res) => {
   res.json({ projects });
 });
 
+/**
+ * 递归计算目录总大小。
+ */
 function getDirSize(dir) {
   let size = 0;
   try {

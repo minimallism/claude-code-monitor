@@ -4,6 +4,12 @@ const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 
+/**
+ * 解析命令行参数。
+ *
+ * 注意：这里使用最简单的手动解析，不引入额外依赖。
+ * 所有带值的选项都按 "下一个参数" 读取，因此最后一个值生效。
+ */
 function parseArgs(argv) {
   const args = {
     help: false,
@@ -76,6 +82,11 @@ Examples:
 `);
 }
 
+/**
+ * 检查 Node.js 版本。
+ * - 低于 18 直接退出。
+ * - 18-21 给出警告：建议 22+ 以便使用内置 node:sqlite，避免 better-sqlite3 编译问题。
+ */
 function checkNodeVersion() {
   const major = process.versions.node.split(".")[0];
   if (Number(major) < 18) {
@@ -90,6 +101,10 @@ function checkNodeVersion() {
   }
 }
 
+/**
+ * 确保前端构建产物存在。
+ * 如果缺少 client/dist/index.html，说明没运行 npm run build，直接给出友好提示并退出。
+ */
 function ensureDistExists() {
   const distPath = path.join(__dirname, "..", "client", "dist", "index.html");
   if (!fs.existsSync(distPath)) {
@@ -107,6 +122,10 @@ function ensureDistExists() {
   }
 }
 
+/**
+ * 把 CLI 参数转换为子进程环境变量。
+ * server/index.js 会通过 process.env 读取这些变量。
+ */
 function buildEnv(args) {
   const env = { ...process.env, NODE_ENV: "production" };
   if (args.port) env.DASHBOARD_PORT = args.port;
@@ -117,6 +136,10 @@ function buildEnv(args) {
   return env;
 }
 
+/**
+ * 根据平台调用系统命令打开浏览器。
+ * 使用 detached + unref 让浏览器进程独立运行，不影响 CLI 生命周期。
+ */
 function openBrowser(url) {
   const platform = process.platform;
   let command;
@@ -138,6 +161,13 @@ function openBrowser(url) {
   }
 }
 
+/**
+ * CLI 入口：
+ * 1. 解析参数。
+ * 2. 检查 Node 版本和前端构建产物。
+ * 3. 以当前 Node 启动 server/index.js，并透传环境变量。
+ * 4. 处理信号转发和 --open 自动打开浏览器。
+ */
 function main() {
   const args = parseArgs(process.argv.slice(2));
 

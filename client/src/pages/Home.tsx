@@ -44,6 +44,7 @@ export function Home() {
 
   
   const agentsRef = useRef<HTMLDivElement>(null);
+  // 根据容器高度动态计算可见主 agent 数量，避免一次性渲染过多卡片。
   const [visibleAgentCount, setVisibleAgentCount] = useState(6);
 
   useEffect(() => {
@@ -64,6 +65,13 @@ export function Home() {
     return () => ro.disconnect();
   }, []);
 
+  /**
+   * 加载仪表盘数据：
+   * - stats：顶部统计卡片。
+   * - working + waiting agents：活跃 agent 列表。
+   * - active sessions：用于给 agent 卡片提供 session 上下文（名称、cwd、模型）。
+   * - 对每个活跃 session 再拉取其全部 agents，用于构建子 agent 树。
+   */
   const load = useCallback(async () => {
     try {
       const [statsRes, workingRes, waitingRes, sessionsRes] = await Promise.all(
@@ -80,8 +88,7 @@ export function Home() {
       setSessionsById(new Map(sessionsRes.sessions.map((s) => [s.id, s])));
       setError(null);
 
-      
-      
+      // 只对有主 agent 活跃的 session 拉取子 agent，减少请求量。
       const activeSessionIds = [
         ...new Set(active.filter((a) => a.type === "main").map((a) => a.session_id)),
       ];
@@ -106,6 +113,12 @@ export function Home() {
   }, [load]);
 
   
+  /**
+   * 自动展开含有 working 子 agent 的分支。
+   *
+   * 当有新的子 agent 开始工作时，从该子 agent 沿 parent_agent_id 链向上找到所有祖先，
+   * 并把它们加入 expandedAgents，确保用户能看到正在工作的子 agent。
+   */
   useEffect(() => {
     const parentsWithActive = new Set<string>();
     for (const a of allSubagents) {
@@ -113,7 +126,7 @@ export function Home() {
         parentsWithActive.add(a.parent_agent_id);
       }
     }
-    if (parentsWithActive.size === 0) return; 
+    if (parentsWithActive.size === 0) return;
 
     const subMap = new Map(allSubagents.map((a) => [a.id, a]));
     const toExpand = new Set<string>();
@@ -126,13 +139,18 @@ export function Home() {
       }
     }
     setExpandedAgents((prev) => {
-      
+      // 只有真正需要新增时才创建新的 Set，避免无意义重渲染。
       const newIds = [...toExpand].filter((id) => !prev.has(id));
-      if (newIds.length === 0) return prev; 
+      if (newIds.length === 0) return prev;
       return new Set([...prev, ...newIds]);
     });
   }, [allSubagents]);
 
+  /**
+   * 监听 SSE 事件，对 agent/session 相关推送做 300ms 防抖刷新。
+   *
+   * 300ms 与项目约束一致：SSE 重连时不应触发大量重复请求。
+   */
   useEffect(() => {
     const debounceRef = { timer: null as ReturnType<typeof setTimeout> | null };
     return eventBus.subscribe((msg: WSMessage) => {
@@ -142,7 +160,6 @@ export function Home() {
         msg.type === "session_created" ||
         msg.type === "session_updated"
       ) {
-        
         if (debounceRef.timer) clearTimeout(debounceRef.timer);
         debounceRef.timer = setTimeout(load, 300);
       }
@@ -152,6 +169,13 @@ export function Home() {
   const wsConnected = useSyncExternalStore(eventBus.onConnection, () => eventBus.connected);
 
   
+  /**
+   * 构建子 agent 树结构。
+   *
+   * - childrenByParent：按 parent_agent_id 分组，方便 O(1) 查找子节点。
+   * - getDescendants：递归计算某 agent 下所有后代子 agent 总数和工作中数量，
+   *   使用 descendantCache 做记忆化，避免重复计算。
+   */
   const agentTree = useMemo(() => {
     const childrenByParent = new Map<string, Agent[]>();
     for (const a of allSubagents) {
@@ -162,12 +186,11 @@ export function Home() {
       }
     }
 
-    
     const descendantCache = new Map<string, { total: number; active: number }>();
     function getDescendants(id: string): { total: number; active: number } {
       if (descendantCache.has(id)) return descendantCache.get(id)!;
-      
-      
+
+      // 先设置占位值，防止循环 parent 关系导致死循环（虽然理论上不应出现）。
       descendantCache.set(id, { total: 0, active: 0 });
       const kids = childrenByParent.get(id) || [];
       const result = kids.reduce(
@@ -183,23 +206,28 @@ export function Home() {
       descendantCache.set(id, result);
       return result;
     }
-    
+
+    // 预计算所有子 agent 的后代统计，避免渲染时递归。
     for (const a of allSubagents) getDescendants(a.id);
 
     return { childrenByParent, getDescendants };
   }, [allSubagents]);
 
+  // 统计卡片用到的派生数据。
   const totalTokens = stats
     ? stats.total_tokens_input + stats.total_tokens_output + stats.total_tokens_cache_read + stats.total_tokens_cache_write
     : 0;
 
+  // 缓存命中率：cache_read / (input + cache_read)。
   const cacheHitRate = stats
     ? ((stats.total_tokens_cache_read / (stats.total_tokens_input + stats.total_tokens_cache_read || 1)) * 100)
     : 0;
 
+  // active_sessions 包含 running 和 waiting；这里把它们拆开展示在趋势文本里。
   const waitingSessionCount = [...sessionsById.values()].filter((s) => isSessionAwaitingInput(s)).length;
   const runningSessionCount = (stats?.active_sessions ?? 0) - waitingSessionCount;
 
+  // 活跃 agent 数量 = 主 agent + 所有子 agent。
   const workingAgentCount = activeAgents.filter((a) => a.type === "main" && a.status === "working").length
     + allSubagents.filter((a) => a.status === "working").length;
   const waitingAgentCount = activeAgents.filter((a) => a.type === "main" && (a.status === "waiting" || isAgentAwaitingInput(a))).length
@@ -341,13 +369,19 @@ export function Home() {
                 {(() => {
                   const { childrenByParent, getDescendants } = agentTree;
 
+                  /**
+                   * 递归渲染单个 agent 节点及其子树。
+                   *
+                   * - ancestors 用于检测循环 parent 关系，避免无限递归。
+                   * - depth 控制缩进和图标（子 agent 用 GitBranch 图标）。
+                   * - 折叠状态下显示 "N 个子agent (M 工作中)" 摘要。
+                   */
                   function renderAgentNode(
                     agent: Agent,
                     depth: number,
                     ancestors: Set<string> = new Set()
                   ): ReactNode {
-                    
-                    
+                    // 防御循环 parent 链。
                     if (ancestors.has(agent.id)) return null;
                     const childAncestors = new Set(ancestors).add(agent.id);
                     const children = childrenByParent.get(agent.id) || [];
@@ -446,9 +480,12 @@ export function Home() {
                   
                   
                   
+                  // 只渲染计算出的可见主 agent 数量；子 agent 作为树的一部分跟随展开。
                   const visibleMains = activeAgents
                     .filter((a) => a.type === "main")
                     .slice(0, visibleAgentCount);
+
+                  // 收集所有已经在树中渲染过的 agent id，避免子 agent 既在树里又在末尾重复出现。
                   const renderedInTree = new Set<string>();
                   for (const mainAgent of visibleMains) {
                     const stack: string[] = [mainAgent.id];
@@ -465,6 +502,7 @@ export function Home() {
                   return (
                     <>
                       {visibleMains.map((main) => renderAgentNode(main, 0))}
+                      {/* 没有在主 agent 树中的孤立子 agent，单独平铺显示。 */}
                       {activeAgents
                         .filter((a) => a.type === "subagent" && !renderedInTree.has(a.id))
                         .map((agent) => (

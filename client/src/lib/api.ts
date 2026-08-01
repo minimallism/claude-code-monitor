@@ -13,6 +13,15 @@ import type {
 
 const BASE = "/api";
 
+/**
+ * 获取 dashboard token。
+ *
+ * 优先级：
+ * 1. 运行时注入的 __DASHBOARD_TOKEN__（构建时由服务器通过 index.html 内联脚本写入）。
+ * 2. localStorage 中用户手动保存的 token。
+ *
+ * 这样 CLI 启动时可以通过环境变量把 token 注入前端，同时支持用户在设置页输入 token。
+ */
 export function dashboardToken(): string | null {
   try {
     const injected = (globalThis as { __DASHBOARD_TOKEN__?: unknown }).__DASHBOARD_TOKEN__;
@@ -24,6 +33,13 @@ export function dashboardToken(): string | null {
   }
 }
 
+/**
+ * 通用 API 请求封装。
+ *
+ * - 自动从 dashboardToken() 读取 token 并放到 x-dashboard-token 请求头。
+ * - 401/403 等错误会抛 Error，调用方负责显示提示。
+ * - 非 JSON 错误响应体会被忽略，兜底为 "HTTP ${status}"。
+ */
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = dashboardToken();
   const headers: Record<string, string> = {

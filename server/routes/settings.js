@@ -1,3 +1,13 @@
+/**
+ * 设置与系统信息 API。
+ *
+ * 提供：
+ * - 数据库路径/大小、服务运行时长/内存占用。
+ * - Claude Code hooks 安装状态检测。
+ * - 一键重新安装 hooks。
+ * - 删除某个 project 下的所有会话文件及数据库记录（危险操作）。
+ */
+
 const { Router } = require("express");
 const fs = require("fs");
 const path = require("path");
@@ -8,6 +18,9 @@ const router = Router();
 const { getSettingsPath, getProjectsDir } = require("../lib/claude-home");
 const CLAUDE_SETTINGS_PATH = getSettingsPath();
 
+/**
+ * 获取数据库文件大小（字节）。
+ */
 function getDbSize() {
   try {
     const stat = fs.statSync(DB_PATH);
@@ -17,6 +30,12 @@ function getDbSize() {
   }
 }
 
+/**
+ * 检测 Claude Code settings.json 中是否已配置 dashboard 的 hooks。
+ *
+ * 逻辑：对每个关注的 hookType，检查其 hooks 数组中是否存在命令包含
+ * "hook-handler.js" 的条目。只有所有类型都配置好才视为 installed=true。
+ */
 function getHookStatus() {
   try {
     if (!fs.existsSync(CLAUDE_SETTINGS_PATH)) {
@@ -52,6 +71,11 @@ function getHookStatus() {
   }
 }
 
+/**
+ * GET /api/settings/info
+ *
+ * 返回数据库信息、hooks 安装状态和服务运行时信息。
+ */
 router.get("/info", (req, res) => {
   const dbSize = getDbSize();
   const hookStatus = getHookStatus();
@@ -69,6 +93,11 @@ router.get("/info", (req, res) => {
   });
 });
 
+/**
+ * POST /api/settings/reinstall-hooks
+ *
+ * 重新调用 install-hooks.js 把 hook 配置写入 Claude Code settings.json。
+ */
 router.post("/reinstall-hooks", (_req, res) => {
   try {
     const { installHooks } = require("../../scripts/install-hooks");
@@ -82,6 +111,15 @@ router.post("/reinstall-hooks", (_req, res) => {
   }
 });
 
+/**
+ * DELETE /api/settings/projects/:encodedCwd
+ *
+ * 删除指定编码 cwd 对应的项目：
+ * 1. 校验该编码确实对应数据库中的某个 cwd。
+ * 2. 删除该项目目录下所有会话 JSONL 及子 agent 目录。
+ * 3. 从数据库删除这些会话（级联删除关联的 agents/events/token_usage）。
+ * 4. 若项目目录已空，则删除该目录。
+ */
 router.delete("/projects/:encodedCwd", (req, res) => {
   const { encodedCwd } = req.params;
   const projectsDir = getProjectsDir();
@@ -109,7 +147,7 @@ router.delete("/projects/:encodedCwd", (req, res) => {
         deleted.files++;
       }
     } catch { }
-    
+
     const subDir = path.join(projectDir, row.id);
     if (fs.existsSync(subDir)) {
       try {
@@ -128,6 +166,5 @@ router.delete("/projects/:encodedCwd", (req, res) => {
 
   res.json({ ok: true, deleted });
 });
-
 
 module.exports = router;

@@ -1,3 +1,9 @@
+/**
+ * 前端应用入口。
+ *
+ * 加载字体、全局样式、i18n 配置后，把 App 组件渲染到 #root。
+ */
+
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 

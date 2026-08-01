@@ -1,3 +1,12 @@
+/**
+ * 应用根组件。
+ *
+ * 职责：
+ * 1. 建立 SSE 长连接，并把收到的服务器消息通过 eventBus 分发给订阅者。
+ * 2. 配置 React Router 路由与 Layout 布局。
+ * 3. 根据当前路由动态更新页面标题（i18n）。
+ */
+
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
@@ -22,6 +31,9 @@ const TITLE_KEYS: Record<string, string> = {
   "/data": "nav:data",
 };
 
+/**
+ * 根据当前路由匹配对应的 i18n 标题 key，并设置 document.title。
+ */
 function TitleUpdater() {
   const { t } = useTranslation("nav");
   const location = useLocation();

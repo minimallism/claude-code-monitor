@@ -1,3 +1,14 @@
+/**
+ * Claude Code hook 处理路由。
+ *
+ * Claude Code 通过 user hooks 在关键生命周期节点调用本服务的 /api/hooks/event，
+ * 把会话、工具调用、子 agent、停止等事件推送过来。本路由负责：
+ * 1. 维护 sessions / agents / events 表的状态机。
+ * 2. 从 transcript_path 指向的 JSONL 增量提取 token、标题、模型等信息。
+ * 3. 通过 SSE broadcast 把变化实时推送给前端。
+ * 4. 启动看门狗定时器，处理用户中断、进程崩溃等兜底场景。
+ */
+
 const { Router } = require("express");
 const { v4: uuidv4 } = require("uuid");
 const dbModule = require("../db");
@@ -12,18 +23,26 @@ const router = Router();
 
 const transcriptCache = new TranscriptCache();
 
+// 用于识别 Claude Code 推送的系统通知是否表示正在等待用户输入。
+// 匹配 "waiting for your input"、"approval needed"、"permission" 等常见文案。
 const WAITING_INPUT_PATTERN =
   /\bpermission\b|waiting (?:for )?(?:your )?(?:input|response|reply|approval)|needs?\s+your\s+(?:input|approval|response|attention)|approval\s+(?:needed|required)|awaiting\s+(?:your\s+)?(?:input|approval|response)/i;
 
+/**
+ * 判断一条 Notification hook 的消息是否在请求用户介入。
+ */
 function isWaitingForUserMessage(notificationMessage) {
   if (!notificationMessage || typeof notificationMessage !== "string") return false;
   return WAITING_INPUT_PATTERN.test(notificationMessage);
 }
 
+/**
+ * 清除会话及其所有 agent 的 awaiting_input_since 标记。
+ *
+ * 调用时机：用户提交新输入、工具开始执行、子 agent 停止等"会话重新动起来"的事件。
+ * broadcastUpdates 为 false 时只清理数据库不广播，用于 SessionEnd 这种最终状态场景。
+ */
 function clearAwaitingInput(sessionId, mainAgentId, broadcastUpdates) {
-  
-  
-  
   const cleared = stmts.clearSessionAgentsAwaitingInput.run(sessionId);
   const sessCleared = stmts.clearSessionAwaitingInput.run(sessionId);
   if (broadcastUpdates && cleared.changes > 0 && mainAgentId) {
@@ -36,6 +55,11 @@ function clearAwaitingInput(sessionId, mainAgentId, broadcastUpdates) {
   }
 }
 
+/**
+ * 把被用户中断、或长时间 idle 的会话恢复为 waiting 状态。
+ * 调用场景见下方的 watchdogCheck：当转录本里检测到 [Request interrupted by user]，
+ * 或主 agent working 但既无 current_tool 也无输入等待且超过空闲阈值时触发。
+ */
 function recoverInterruptedSession(sessionId, fullSession, mainAgentId) {
   const timestamp = new Date().toISOString();
   if (mainAgentId) {
@@ -48,6 +72,11 @@ function recoverInterruptedSession(sessionId, fullSession, mainAgentId) {
   if (mainAgentId) broadcast("agent_updated", stmts.getAgent.get(mainAgentId));
 }
 
+/**
+ * 确保 session 及其主 agent 在数据库中存在。
+ * 如果是首次收到该 session 的 hook，则创建 session 记录并自动插入一个 main agent。
+ * 同时尝试写入 transcript_path（仅当字段为空时写入，避免覆盖）。
+ */
 function ensureSession(sessionId, data) {
   let session = stmts.getSession.get(sessionId);
   if (!session) {
@@ -66,7 +95,7 @@ function ensureSession(sessionId, data) {
     }
     broadcast("session_created", session);
 
-    
+    // 每个 session 固定有一个 main agent，id 规则为 "{sessionId}-main"，方便快速查找。
     const mainAgentId = `${sessionId}-main`;
     const sessionLabel = session.name || `Session ${sessionId.slice(0, 8)}`;
     stmts.insertAgent.run(
@@ -84,21 +113,25 @@ function ensureSession(sessionId, data) {
     if (mainAgent) broadcast("agent_created", mainAgent);
   }
 
-  
-  
-  
-  
-  
+  // 仅在 transcript_path 为空时写入，因为 hook 可能来自旧路径或临时路径，
+  // 不应覆盖已经正确设置的值。
   if (typeof data.transcript_path === "string" && data.transcript_path) {
     stmts.setSessionTranscriptPath.run(data.transcript_path, sessionId);
   }
   return session;
 }
 
+/**
+ * 获取会话的主 agent。主 agent id 固定为 `{sessionId}-main`。
+ */
 function getMainAgent(sessionId) {
   return stmts.getAgent.get(`${sessionId}-main`);
 }
 
+/**
+ * 判断当前 session 名称是否是自动生成的，从而决定是否可以被 hook 中提供的 custom/ai title 覆盖。
+ * 自动生成规则包括默认 "Session xxxxxx" 以及基于 cwd 目录名的名称。
+ */
 function isAutoSessionName(name, sessionId, cwd) {
   if (!name || !name.trim()) return true;
   if (name === `Session ${sessionId.slice(0, 8)}`) return true;
@@ -111,6 +144,9 @@ function isAutoSessionName(name, sessionId, cwd) {
   return false;
 }
 
+/**
+ * 取第一条真实用户消息的前 60 个字符作为会话/主 agent 的候选名称。
+ */
 function firstUserLabel(result) {
   const raw = result && typeof result.firstUserMessage === "string" ? result.firstUserMessage : "";
   const text = raw.trim();
@@ -118,6 +154,10 @@ function firstUserLabel(result) {
   return text.length > 60 ? text.slice(0, 57) + "..." : text;
 }
 
+/**
+ * 判断 main agent 名称是否仍是自动生成，规则与 isAutoSessionName 类似，
+ * 只是多了 "Main Agent - " 前缀。
+ */
 function isAutoMainAgentName(name, sessionId, cwd) {
   if (!name || !name.trim()) return true;
   if (name === "Main Agent") return true;
@@ -126,6 +166,11 @@ function isAutoMainAgentName(name, sessionId, cwd) {
   return false;
 }
 
+/**
+ * 根据转录本里的 custom-title / ai-title 更新 session 名称。
+ * 只有名称为自动生成，或用户显式设置了 customTitle 时才允许覆盖，
+ * 防止用户手动修改过的名称被 ai 生成的标题意外替换。
+ */
 function syncSessionName(session, result) {
   if (!session || !result) return;
   const custom = result.customTitle && result.customTitle.trim();
@@ -143,6 +188,10 @@ function syncSessionName(session, result) {
   }
 }
 
+/**
+ * 把第一条用户消息用作 session / main agent 的默认名称和任务描述。
+ * 当用户没有手动命名时，这样可以让会话列表更有辨识度。
+ */
 function applyFirstUserDescriptor(sessionId, result) {
   const label = firstUserLabel(result);
   if (!label) return;
@@ -163,9 +212,9 @@ function applyFirstUserDescriptor(sessionId, result) {
     isAutoMainAgentName(mainAgent.name, sessionId, session?.cwd) && mainAgent.name !== desiredName;
   const fillTask = !mainAgent.task || !String(mainAgent.task).trim();
   if (!fillName && !fillTask) return;
-  
-  
-  
+
+  // updateAgent 参数顺序：name, status, task, current_tool, ended_at, metadata, id。
+  // 不需要修改的字段传 null，SQL 中用 COALESCE 保留原值。
   stmts.updateAgent.run(
     fillName ? desiredName : null,
     null,
@@ -210,6 +259,12 @@ const processEvent = db.transaction((hookType, data) => {
   
   
   
+  // 会话状态复活的判定逻辑：
+  // - 用户提交新输入、或工具调用/子 agent 活动时，如果会话处于非 active 状态，需要重新激活。
+  // - Stop/SubagentStop 事件只应复活那些之前被标记为 completed（例如导入的历史会话）的会话；
+  //   对于 error 状态的会话，Stop 不自动复活，必须由用户重新介入。
+  // - 子 agent 活动（Agent tool 或 PreToolUse）在 completed 会话上也能触发复活，
+  //   因为用户可能在父会话里继续委派任务。
   const isUserAction = hookType === "UserPromptSubmit" || hookType === "PreToolUse";
   const isNonTerminalEvent = hookType !== "SessionEnd";
   const isStopLike = hookType === "Stop" || hookType === "SubagentStop";
@@ -257,7 +312,8 @@ const processEvent = db.transaction((hookType, data) => {
       if (toolName === "Agent") {
         const toolInput = data.tool_input || {};
         const subagentId = uuidv4();
-        
+
+        // 子 agent 名称优先级：description > subagent_type > prompt 首行 > 默认 "Subagent"。
         const rawSubagentName =
           toolInput.description ||
           toolInput.subagent_type ||
@@ -265,13 +321,9 @@ const processEvent = db.transaction((hookType, data) => {
           "Subagent";
         const subagentName = rawSubagentName.length > 60 ? rawSubagentName.slice(0, 57) + "..." : rawSubagentName;
 
-        
-        
-        
-        
-        
-        
-        
+        // 父 agent 选择：默认是当前 main agent；
+        // 如果 main agent 不处于 working（例如正在等待用户输入），
+        // 则把当前嵌套最深的 working 子 agent 作为父级，以正确反映调用链。
         let parentId = mainAgentId;
         if (mainAgent && mainAgent.status !== "working") {
           const deepestWorkingAgent = stmts.findDeepestWorkingAgent.get(sessionId, sessionId);
@@ -301,6 +353,8 @@ const processEvent = db.transaction((hookType, data) => {
       
       
       
+      // 当 main agent 处于 waiting 但存在正在工作的子 agent 时，
+      // 把当前工具调用归因于该子 agent，而不是 main agent。
       const deepestWorkingAgent =
         mainAgent && mainAgent.status === "waiting"
           ? stmts.findDeepestWorkingAgent.get(sessionId, sessionId)
@@ -309,6 +363,7 @@ const processEvent = db.transaction((hookType, data) => {
       if (subagentIsActor && toolName !== "Agent") {
         agentId = deepestWorkingAgent.id;
       }
+      // 如果确实没有子 agent 在执行，则把工具名更新到 main agent 的 current_tool。
       if (
         mainAgent &&
         !subagentIsActor &&
@@ -321,18 +376,11 @@ const processEvent = db.transaction((hookType, data) => {
     }
 
     case "PostToolUse": {
-      
-      
-      
-      
-      
+      // 工具执行成功，清除等待输入标记（用户批准通常是 PreToolUse 之前，但双重保险）。
       clearAwaitingInput(sessionId, mainAgentId, true);
 
-      
-      
-      
-
-      
+      // 与 PreToolUse 对称：如果 main agent 在 waiting，但子 agent 真正执行了工具，
+      // 则把 PostToolUse 事件归因于该子 agent。
       if (mainAgent && mainAgent.status === "waiting" && toolName !== "Agent") {
         const deepestWorkingAgent = stmts.findDeepestWorkingAgent.get(sessionId, sessionId);
         if (deepestWorkingAgent) {
@@ -340,8 +388,7 @@ const processEvent = db.transaction((hookType, data) => {
         }
       }
 
-      
-      
+      // main agent 在 working 时工具结束，清除 current_tool。
       if (mainAgent && mainAgent.status === "working") {
         stmts.updateAgent.run(null, null, null, null, null, null, mainAgentId);
         broadcast("agent_updated", stmts.getAgent.get(mainAgentId));
@@ -350,10 +397,9 @@ const processEvent = db.transaction((hookType, data) => {
     }
 
     case "PostToolUseFailure": {
-      
+      // 工具执行失败，逻辑与 PostToolUse 基本一致，只是事件类型不同。
       clearAwaitingInput(sessionId, mainAgentId, true);
 
-      
       if (mainAgent && mainAgent.status === "waiting" && toolName !== "Agent") {
         const deepestWorkingAgent = stmts.findDeepestWorkingAgent.get(sessionId, sessionId);
         if (deepestWorkingAgent) {
@@ -361,7 +407,6 @@ const processEvent = db.transaction((hookType, data) => {
         }
       }
 
-      
       if (mainAgent && mainAgent.status === "working") {
         stmts.updateAgent.run(null, null, null, null, null, null, mainAgentId);
         broadcast("agent_updated", stmts.getAgent.get(mainAgentId));
@@ -370,17 +415,13 @@ const processEvent = db.transaction((hookType, data) => {
     }
 
     case "Stop": {
-
+      // Claude Code 在停止生成、等待用户下一步指示时发送 Stop hook。
+      // 此时把 main agent 设为 waiting，并标记 awaiting_input_since。
       const now = new Date().toISOString();
       const agentMutable =
         !!mainAgent && mainAgent.status !== "completed" && mainAgent.status !== "error";
 
-      
-      
-      
-      
-      
-      
+      // 只有 completed/error 等终态才不再修改，避免覆盖 SessionEnd 的结果。
       if (agentMutable) {
         stmts.updateAgent.run(null, "waiting", null, null, null, null, mainAgentId);
       }
@@ -396,12 +437,13 @@ const processEvent = db.transaction((hookType, data) => {
     }
 
     case "SubagentStop": {
+      // 子 agent 完成时，需要把数据库中对应的 working 子 agent 标记为 completed。
+      // 但 hook 里通常只包含 description/agent_type/prompt，没有稳定的 agent uuid，
+      // 因此需要多轮启发式匹配。
       const subagents = stmts.listAgentsBySession.all(sessionId);
       let matchingSubagent = null;
 
-      
-      
-      
+      // 第一轮：按名称前缀匹配（description/agent_type 通常被用来生成 name）。
       const subagentDescription = data.description || data.agent_type || data.subagent_type || null;
       if (subagentDescription) {
         const namePrefix = subagentDescription.length > 57 ? subagentDescription.slice(0, 57) : subagentDescription;
@@ -410,7 +452,7 @@ const processEvent = db.transaction((hookType, data) => {
         );
       }
 
-      
+      // 第二轮：按 subagent_type 字段匹配。
       if (!matchingSubagent && data.agent_type) {
         matchingSubagent = subagents.find(
           (a) =>
@@ -418,6 +460,7 @@ const processEvent = db.transaction((hookType, data) => {
         );
       }
 
+      // 第三轮：按任务 prompt 全文本匹配。
       if (!matchingSubagent) {
         const prompt = data.prompt ? data.prompt.slice(0, 500) : null;
         if (prompt) {
@@ -427,7 +470,8 @@ const processEvent = db.transaction((hookType, data) => {
         }
       }
 
-      
+      // 兜底：如果仍找不到，取任意一个处于 working 状态的子 agent。
+      // 这种 best-effort 在并发多个子 agent 同时停止时可能出现归因偏差，但概率较低。
       if (!matchingSubagent) {
         matchingSubagent = subagents.find((a) => a.type === "subagent" && a.status === "working");
       }
@@ -449,17 +493,13 @@ const processEvent = db.transaction((hookType, data) => {
     }
 
     case "SessionStart": {
-
+      // 会话启动时，如果 main agent 之前是 waiting（例如刚复活），先切回 working。
       if (mainAgent && mainAgent.status === "waiting") {
         stmts.updateAgent.run(null, "working", null, null, null, null, mainAgentId);
       }
 
-      
-      
-      
-      
-      
-      
+      // SessionStart 通常也意味着 Claude 正在等待用户第一句话，
+      // 所以把会话和主 agent 标记为 awaiting_input_since，便于 UI 显示"等待输入"。
       const sessionStartTs = new Date().toISOString();
       stmts.setSessionAwaitingInput.run(sessionStartTs, sessionId);
       if (mainAgentId) stmts.setAgentAwaitingInput.run(sessionStartTs, mainAgentId);
@@ -476,13 +516,10 @@ const processEvent = db.transaction((hookType, data) => {
     case "SessionEnd": {
       const endingSession = stmts.getSession.get(sessionId);
 
+      // 终态事件不需要广播，因为接下来会批量广播 session/agent 更新。
       clearAwaitingInput(sessionId, mainAgentId, false);
 
-      
-      
-      
-      
-      
+      // 如果会话在 SessionEnd 前已经被活性检测标记为 error，则保持 error；否则为 completed。
       const finalSessionStatus =
         endingSession?.status === "error" ? "error" : "completed";
       const sessionAgents = stmts.listAgentsBySession.all(sessionId);
@@ -501,7 +538,7 @@ const processEvent = db.transaction((hookType, data) => {
     }
 
     case "UserPromptSubmit": {
-
+      // 用户提交新输入，清除等待状态并把 main agent 切回 working。
       clearAwaitingInput(sessionId, mainAgentId, true);
       if (mainAgent && mainAgent.status !== "completed" && mainAgent.status !== "error") {
         stmts.updateAgent.run(null, "working", null, null, null, null, mainAgentId);
@@ -511,6 +548,7 @@ const processEvent = db.transaction((hookType, data) => {
     }
 
     case "Notification": {
+      // Claude Code 的系统通知。如果内容表明需要用户批准/输入，则切换到 waiting。
       const notificationMessage = data.message || "Notification received";
       if (isWaitingForUserMessage(notificationMessage)) {
 
@@ -530,25 +568,14 @@ const processEvent = db.transaction((hookType, data) => {
     }
   }
 
-  
-  
-  
-  
-  
-  
-  
-  
-  
+  // 每次 hook 事件后，尝试从转录本 JSONL 中增量提取 token、模型、标题等信息。
+  // transcriptCache 会根据文件 mtime 做缓存/增量读取，避免重复全量解析大文件。
   if (data.transcript_path) {
     const result = transcriptCache.extract(data.transcript_path);
     if (result) {
       const { tokensByModel, latestModel } = result;
 
-      
-      
-      
-      
-      
+      // 只有在模型发生变化时才更新 sessions.model，减少无意义更新。
       if (latestModel) {
         const updateResult = stmts.updateSessionModel.run(latestModel, sessionId, latestModel);
         if (updateResult.changes > 0) {
@@ -557,25 +584,14 @@ const processEvent = db.transaction((hookType, data) => {
         }
       }
 
-      
-      
-      
+      // 用 custom-title / ai-title 覆盖自动生成的会话名称。
       syncSessionName(stmts.getSession.get(sessionId), result);
 
-      
-      
-      
-      
+      // 用第一条真实用户消息填充会话和 main agent 名称/任务。
       applyFirstUserDescriptor(sessionId, result);
 
-      
-      
-      
-
-
+      // 将解析出的各模型 token 分桶写入 token_usage 表（INSERT OR REPLACE）。
       if (tokensByModel) {
-        
-        
         for (const tokens of Object.values(tokensByModel)) {
           stmts.replaceTokenUsage.run(
             sessionId,
@@ -588,7 +604,7 @@ const processEvent = db.transaction((hookType, data) => {
         }
       }
 
-      
+      // 把 usage 附加信息（service_tier/speed/geo）和思考块数量等写入 session.metadata。
       if (result.usageExtras || result.thinkingBlockCount > 0) {
         const session = stmts.getSession.get(sessionId);
         if (session) {
@@ -599,6 +615,8 @@ const processEvent = db.transaction((hookType, data) => {
           if (result.thinkingBlockCount > 0) {
             meta.thinking_blocks = (meta.thinking_blocks || 0) + result.thinkingBlockCount;
           }
+          // turnDurations 来自转录本中的 subtype=turn_duration 系统事件，
+          // 累加后得到总会话轮数和总耗时。
           if (result.turnDurations) {
             meta.turn_count = (meta.turn_count || 0) + result.turnDurations.length;
             const totalMs = result.turnDurations.reduce((s, t) => s + t.durationMs, 0);
@@ -610,15 +628,16 @@ const processEvent = db.transaction((hookType, data) => {
     }
   }
 
-  
-  
+  // 会话结束后，该转录本不会再有增量更新，清理缓存释放内存。
   if (hookType === "SessionEnd" && data.transcript_path) {
     transcriptCache.invalidate(data.transcript_path);
   }
 
-  
+  // 更新会话的 updated_at，供会话列表排序和活性检测使用。
   stmts.touchSession.run(sessionId);
 
+  // 将事件持久化。tool_use_id 用于后续配对 PreToolUse/PostToolUse/PostToolUseFailure，
+  // 计算工具调用成功/失败数。
   stmts.insertEvent.run(
     sessionId,
     agentId,
@@ -656,18 +675,10 @@ router.post("/event", (req, res) => {
 
   res.json({ ok: true, event: result });
 
-  
-  
-  
-  
+  // SubagentStop 发生时，子 agent 的 JSONL 转录本已经落盘。
+  // 扫描并导入这些子 agent 转录本，确保子 agent 的 token 成本被正确归因。
   if (hook_type === "SubagentStop" && data.session_id && data.transcript_path) {
-    
-    
-    
-    
-    
-    
-    
+    // 把父会话已知的模型名传给导入流程，便于子 agent token 缺失模型时做合理兜底。
     let parentTokenModelNames = [];
     try {
       const mainResult = transcriptCache.extract(data.transcript_path);
@@ -678,30 +689,40 @@ router.post("/event", (req, res) => {
       }
       if (mainResult && mainResult.latestModel) parentTokenModelNames.push(mainResult.latestModel);
     } catch {
-      
+      // 即使提取父转录本失败，也继续导入子 agent。
     }
     scanAndImportSubagents(dbModule, data.session_id, data.transcript_path, {
       parentModels: parentTokenModelNames,
-    })
-      ;
+    });
   }
 });
 
+// 看门狗轮询间隔：15 秒一次。
 const WATCHDOG_INTERVAL_MS = 15_000;
-const STALE_THRESHOLD_MS = 10_000; 
+// 超过 10 秒没有更新的 active/error 会话才会被视为"可能失活"，进入进一步检查。
+const STALE_THRESHOLD_MS = 10_000;
 
+// main agent 在 working 状态、但没有 current_tool 也没有等待输入时，
+// 如果超过该时间没有新事件/文件修改，则视为被用户中断或卡死，恢复为 waiting。
 const WORKING_IDLE_MS = (() => {
   const raw = parseInt(process.env.DASHBOARD_WORKING_IDLE_SECONDS, 10);
-  return Number.isFinite(raw) && raw > 0 ? raw * 1000 : 120_000; 
+  return Number.isFinite(raw) && raw > 0 ? raw * 1000 : 120_000;
 })();
 
+/**
+ * 看门狗检查：处理两类问题会话。
+ * 1. 用户中断 / 主 agent 空转：通过转录本中的 [Request interrupted by user] 或空闲超时判断。
+ * 2. 真实 Claude 进程已退出但会话仍 active：通过 livenessReap 探测 /proc/<pid>/cwd。
+ */
 function watchdogCheck() {
   try {
     const os = require("os");
     const path = require("path");
     const fs = require("fs");
     const cutoff = new Date(Date.now() - STALE_THRESHOLD_MS).toISOString();
-    
+
+    // 找出一段时间内没有更新的 active/error 会话。
+    // 子查询取该会话最近一条事件的时间，用于和文件 mtime 比较判断真实空闲时长。
     const staleSessions = db
       .prepare(
         `SELECT s.id, s.status, s.cwd, s.transcript_path,
@@ -712,25 +733,21 @@ function watchdogCheck() {
       .all(cutoff);
 
     for (const staleSession of staleSessions) {
-      
+      // 尝试定位主转录本路径；如果数据库里没记录，则按 cwd 推导默认路径。
       let transcriptPath = staleSession.transcript_path || null;
-      
-      
+
       if (!transcriptPath && staleSession.cwd) {
-        const slug = staleSession.cwd.replace(/[\/\.]/g, "-");
+        const slug = staleSession.cwd.replace(/[\/.]/g, "-");
         const candidate = path.join(os.homedir(), ".claude", "projects", slug, `${staleSession.id}.jsonl`);
         if (fs.existsSync(candidate)) transcriptPath = candidate;
       }
       if (!transcriptPath) continue;
 
-      
-      
+      // 增量提取转录本，获取 token、标题、中断标记等信息。
       const result = transcriptCache.extract(transcriptPath);
       if (!result) continue;
 
-      
-      
-      
+      // 先把转录本里最新的 token 数据同步到数据库，避免看门狗期间数据滞后。
       if (result.tokensByModel) {
         for (const tokens of Object.values(result.tokensByModel)) {
           stmts.replaceTokenUsage.run(
@@ -755,52 +772,21 @@ function watchdogCheck() {
         .get(staleSession.id);
       const mainAgentId = mainAgent?.id ?? null;
 
-      
-      
-      
-      
-      
-      
-      
-
-
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
-      
+      // 如果转录本检测到 "[Request interrupted by user]" 且 main agent 仍在 working，
+      // 则把会话恢复为 waiting 状态，避免出现状态与实际不符。
       if (
         result.pendingInterrupt &&
         mainAgent &&
         mainAgent.status === "working" &&
         !mainAgent.awaiting_input_since
       ) {
-        recoverInterruptedSession(staleSession.id, fullSession, mainAgentId)
-        
-        
+        recoverInterruptedSession(staleSession.id, fullSession, mainAgentId);
         continue;
       }
 
-      
-        
-        
-        
-        
-        
-        
-        
-      
-      
-      
-      
+      // 主 agent 处于 working、但没有任何 current_tool 也没有等待输入，
+      // 且转录本/事件都长时间未更新，说明 Claude 可能已经停止但漏发 Stop hook，
+      // 同样恢复为 waiting。
       if (
         mainAgent &&
         mainAgent.status === "working" &&
@@ -811,24 +797,32 @@ function watchdogCheck() {
         try {
           mtimeMs = fs.statSync(transcriptPath).mtimeMs;
         } catch {
-          
+          // 读不到 mtime 就当作 0，下面会用 hookMs 兜底。
         }
         const hookMs = Date.parse(staleSession.last_event) || 0;
         const idleMs = Date.now() - Math.max(mtimeMs, hookMs);
         if (idleMs > WORKING_IDLE_MS) {
-          recoverInterruptedSession(staleSession.id, fullSession, mainAgentId)
+          recoverInterruptedSession(staleSession.id, fullSession, mainAgentId);
         }
       }
       continue;
     }
 
+    // 最后再做一次进程活性收割：把真实 Claude 进程已退出的 active 会话标记为 error。
     livenessReap();
   } catch (err) {
-    
     console.warn("[WATCHDOG] Error during check:", err?.message || err);
   }
 }
 
+/**
+ * 活性收割：检查每个 active 会话的 cwd 是否仍对应一个存活的 Claude Code 进程。
+ * 如果找不到对应进程，则把会话及其未结束的 agents 全部标记为 error，并插入 SessionEnd 事件。
+ *
+ * 注意：
+ * - SIGTERM（kill）退出的 Claude 进程会正常走 hook，不会到这里；
+ * - SIGKILL（kill -9）或异常崩溃会跳过 SessionEnd hook，需要活性检测兜底。
+ */
 function livenessReap() {
   const path = require("path");
 
@@ -838,8 +832,9 @@ function livenessReap() {
        WHERE status = 'active' AND cwd IS NOT NULL AND cwd <> ''`
     )
     .all();
-  if (activeSessions.length === 0) return; 
+  if (activeSessions.length === 0) return;
 
+  // 获取所有存活 Claude 进程的 cwd 集合。
   const probe = liveness.probeLiveCwds();
   if (!probe.available) return;
   for (const staleSession of activeSessions) {
@@ -849,9 +844,10 @@ function livenessReap() {
     } catch {
       continue;
     }
+    // cwd 仍在存活集合中，说明对应进程还在运行，跳过。
     if (probe.cwds.has(resolvedCwd)) continue;
 
-    
+    // cwd 不在存活集合中，认为进程已退出/崩溃，把会话标记为 error。
     const timestamp = new Date().toISOString();
     clearAwaitingInput(staleSession.id, null, false);
     const agents = stmts.listAgentsBySession.all(staleSession.id);
@@ -862,6 +858,7 @@ function livenessReap() {
     }
     stmts.updateSession.run(null, "error", timestamp, null, staleSession.id);
 
+    // 插入一条 SessionEnd 事件，保持事件序列完整。
     const label = staleSession.name || `Session ${staleSession.id.slice(0, 8)}`;
     const mainAgentId = `${staleSession.id}-main`;
     stmts.insertEvent.run(

@@ -1,3 +1,9 @@
+/**
+ * 语法高亮 Token 类型。
+ *
+ * 这些类型没有绑定具体颜色；颜色由 tokenClass() 映射到 Tailwind 类名。
+ * 这样可以保持语法分析层与样式层解耦。
+ */
 export type TokenType =
   | "plain"
   | "comment"
@@ -22,6 +28,7 @@ export interface Token {
   text: string;
 }
 
+// 高亮规则：正则必须带 sticky 标志 y，这样可以从指定位置开始匹配。
 interface Rule {
   type: TokenType;
   pattern: RegExp;
@@ -244,6 +251,12 @@ const SH_BUILTINS = new Set([
   "tee",
 ]);
 
+/**
+ * 通用 tokenizer：按规则顺序匹配，未匹配字符合并为 plain token。
+ *
+ * 使用 sticky 正则保证只从当前 position 开始匹配，避免回溯；
+ * 规则顺序很重要，例如字符串应该在关键字之前匹配。
+ */
 function tokenizeWith(source: string, rules: Rule[]): Token[] {
   const tokens: Token[] = [];
   let position = 0;
@@ -260,7 +273,7 @@ function tokenizeWith(source: string, rules: Rule[]): Token[] {
       }
     }
     if (!matched) {
-      
+      // 未匹配字符合并到上一个 plain token，减少 token 数量。
       const char = source[position]!;
       const last = tokens[tokens.length - 1];
       if (last && last.type === "plain") last.text += char;
@@ -284,7 +297,8 @@ function tokenizeJS(source: string): Token[] {
     { type: "operator", pattern: /=>|===|!==|==|!=|<=|>=|&&|\|\||\?\?|\.\.\.|[+\-*/%=<>!&|^~?:]/y },
     { type: "punctuation", pattern: /[{}[\]();,.]/y },
   ];
-  
+
+  // 先用规则粗分，再把标识符细分为 keyword/builtin/literal/plain。
   return refineIdentifiers(tokenizeWith(source, rules), JS_KEYWORDS, JS_BUILTINS, JS_LITERALS);
 }
 
@@ -306,17 +320,17 @@ function tokenizePython(source: string): Token[] {
 
 function tokenizeJSON(source: string): Token[] {
   const rules: Rule[] = [
-    { type: "string", pattern: /"(?:\\.|[^"\\])*"(?=\s*:)/y }, 
-    { type: "string", pattern: /"(?:\\.|[^"\\])*"/y }, 
+    { type: "string", pattern: /"(?:\\.|[^"\\])*"(?=\s*:)/y }, // 优先匹配对象 key
+    { type: "string", pattern: /"(?:\\.|[^"\\])*"/y }, // 普通字符串
     { type: "number", pattern: /-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b/y },
     { type: "boolean", pattern: /\b(?:true|false|null)\b/y },
     { type: "punctuation", pattern: /[{}[\],:]/y },
   ];
-  
+
   const tokens = tokenizeWith(source, rules);
+  // 第二轮：如果 string token 后面紧跟冒号，则把它标记为 property（对象 key）。
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i]!.type === "string") {
-      
       for (let j = i + 1; j < tokens.length; j++) {
         const token = tokens[j]!;
         if (token.type === "plain" && /^\s*$/.test(token.text)) continue;
@@ -522,6 +536,12 @@ function tokenizeDiff(source: string): Token[] {
   return tokens;
 }
 
+/**
+ * 把粗分阶段标记为 keyword 的标识符进一步细分。
+ *
+ * 实际关键词 -> keyword；内置对象/函数 -> builtin；字面量 -> boolean；
+ * 其他普通标识符 -> plain。
+ */
 function refineIdentifiers(
   tokens: Token[],
   keywords: Set<string>,
@@ -539,6 +559,12 @@ function refineIdentifiers(
   return tokens;
 }
 
+/**
+ * 把各种语言别名统一成内部语言标识。
+ *
+ * 例如 js/javascript/mjs/cjs 都映射为 "js"，
+ * 这样 canonicalLang 之后用 switch 分发即可。
+ */
 export function canonicalLang(lang: string): string {
   const normalizedLang = lang.toLowerCase().trim();
   if (normalizedLang === "js" || normalizedLang === "jsx" || normalizedLang === "javascript" || normalizedLang === "mjs" || normalizedLang === "cjs") return "js";
@@ -554,6 +580,11 @@ export function canonicalLang(lang: string): string {
   return normalizedLang || "plain";
 }
 
+/**
+ * 对源代码进行语法高亮，返回 Token 数组。
+ *
+ * 不支持的语言直接返回一个 plain token，保证调用方不需要特殊处理。
+ */
 export function highlight(source: string, lang: string): Token[] {
   const canon = canonicalLang(lang);
   switch (canon) {
@@ -581,6 +612,10 @@ export function highlight(source: string, lang: string): Token[] {
   }
 }
 
+/**
+ * 把 TokenType 映射为 Tailwind 颜色类名。
+ * 调用方负责把文本拆分成 <span className={tokenClass(type)}>{text}</span>。
+ */
 export function tokenClass(type: TokenType): string {
   switch (type) {
     case "comment":

@@ -125,20 +125,28 @@ export function SessionDetail() {
   }, [id]);
 
   
+  /**
+   * 点击 agent 卡片时，跳转到 Conversation 标签并选中对应 transcript。
+   *
+   * transcript 匹配优先级：
+   * 1. db_agent_id 完全匹配（最可靠）。
+   * 2. 主 agent 固定使用 "main"。
+   * 3. 子 agent 按 subagent_type -> name 逐步过滤候选；只剩一个候选时选中。
+   * 4. 当前 transcripts 为空时，先异步拉取列表再尝试匹配；仍然失败则显示未找到提示。
+   */
   const navigateToAgentConversation = useCallback(
     (agent: Agent) => {
-      
       setTranscriptNotFound(false);
 
       const findTranscriptId = (ts: TranscriptInfo[]): string | null => {
-        
+        // 优先按数据库 agent id 精确匹配。
         const exactMatch = ts.find((t) => t.db_agent_id === agent.id);
         if (exactMatch) return exactMatch.id;
 
-        
+        // 主 agent 的 transcript id 固定为 "main"。
         if (agent.type === "main") return "main";
 
-        
+        // 子 agent 按类型和名称逐步缩小候选范围。
         let candidates = ts.filter((t) => t.type !== "main");
         if (agent.subagent_type) {
           const byType = candidates.filter(
@@ -155,9 +163,6 @@ export function SessionDetail() {
         return null;
       };
 
-      
-      
-      
       setActiveTab("conversation");
 
       const transcriptId = findTranscriptId(transcripts);
@@ -165,8 +170,7 @@ export function SessionDetail() {
       if (transcriptId) {
         setPendingTranscriptId(transcriptId);
       } else if (transcripts.length === 0 && id) {
-        
-        
+        // transcripts 还没加载过时，先拉取再匹配。
         api.sessions
           .transcripts(id)
           .then((result) => {
@@ -182,7 +186,7 @@ export function SessionDetail() {
             setTranscriptNotFound(true);
           });
       } else {
-        
+        // 候选不唯一或没有候选，提示用户。
         setTranscriptNotFound(true);
       }
     },

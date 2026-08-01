@@ -1,5 +1,23 @@
 #!/usr/bin/env node
 
+/**
+ * 历史会话导入脚本。
+ *
+ * 该脚本读取 Claude Code 在 ~/.claude/projects/ 下保存的 *.jsonl 会话转录文件，
+ * 把会话、子 agent、token 用量、工具调用等数据导入到 dashboard 的 SQLite 数据库中。
+ *
+ * 主要能力：
+ * - 首次全量导入（importAllSessions / importFromDirectory）。
+ * - 基于文件 mtime 的增量同步（syncDefaultProjects）。
+ * - token 总量校正（reconcileTokens）。
+ * - 子 agent 关系重建（reconcileSubagentParents）。
+ *
+ * 设计要点：
+ * - 幂等：重复导入同一文件不会创建重复记录，会更新元数据和缺失字段。
+ * - 事务：批量导入使用 SQLite transaction，减少 I/O 开销。
+ * - 容错：单文件解析失败不会中断整个导入流程。
+ */
+
 const fs = require("fs");
 const path = require("path");
 const readline = require("readline");
@@ -17,12 +35,26 @@ const { getProjectsDir } = require("../server/lib/claude-home");
 const { extractFirstUserText } = require("../server/lib/transcript-cache");
 const PROJECTS_DIR = getProjectsDir();
 
+/**
+ * 把用户第一条消息截断为适合作为会话标题的短文本。
+ * 超过 60 字符时保留前 57 字符并加省略号。
+ */
 function firstUserLabel(text) {
   const trimmedText = typeof text === "string" ? text.trim() : "";
   if (!trimmedText) return null;
   return trimmedText.length > 60 ? trimmedText.slice(0, 57) + "..." : trimmedText;
 }
 
+/**
+ * 解析单个会话 JSONL 文件，提取会话级元数据和统计信息。
+ *
+ * 该函数逐行读取 JSONL，避免一次性加载大文件；返回的对象会被后续
+ * importSession 写入数据库。关键字段：
+ * - cwd / slug / gitBranch / model / version：会话上下文信息。
+ * - tokensByModel：按模型/速度/地区/服务层级聚合的 token 用量。
+ * - assistantToolUses / toolResultById：工具调用与结果，用于生成 events。
+ * - parsedSubagents：由 parseSessionForImport 填充的子 agent 数据。
+ */
 async function parseSessionFile(filePath) {
   const sessionId = path.basename(filePath, ".jsonl");
 
@@ -31,6 +63,7 @@ async function parseSessionFile(filePath) {
     crlfDelay: Infinity,
   });
 
+  // 会话上下文字段：按 JSONL 中首次出现的值为准，后续重复出现被忽略。
   let cwd = null;
   let model = null;
   let version = null;
@@ -41,6 +74,8 @@ async function parseSessionFile(filePath) {
   const teams = new Set();
   let userMessageCount = 0;
   let assistantMessageCount = 0;
+
+  // Token 与工具调用统计。
   const tokensByModel = {};
   const assistantMessageTimestamps = [];
   const assistantToolUses = [];
@@ -51,13 +86,10 @@ async function parseSessionFile(filePath) {
   const toolResultErrors = [];
   const toolResultById = new Map();
   const usageMetadata = { service_tiers: new Set(), speeds: new Set(), inference_geos: new Set() };
-  
-  
-  
+
+  // 标题相关：custom-title / ai-title 条目优先级最高；否则用第一条用户消息。
   let customTitle = null;
   let aiTitle = null;
-  
-  
   let firstUserMessage = null;
 
   for await (const line of lineReader) {
@@ -79,6 +111,7 @@ async function parseSessionFile(filePath) {
     }
 
     
+    // 记录每轮对话的耗时（CC 在 system/turn_duration 中输出）。
     if (entry.type === "system" && entry.subtype === "turn_duration" && entry.durationMs) {
       const turnTimestamp = entry.timestamp
         ? typeof entry.timestamp === "number"
@@ -88,6 +121,7 @@ async function parseSessionFile(filePath) {
       turnDurationRecords.push({ durationMs: entry.durationMs, timestamp: turnTimestamp });
     }
 
+    // 首次出现的上下文字段生效；后续重复条目被忽略。
     if (!cwd && entry.cwd) cwd = entry.cwd;
     if (!slug && entry.slug) slug = entry.slug;
     if (!gitBranch && entry.gitBranch) gitBranch = entry.gitBranch;
@@ -95,6 +129,7 @@ async function parseSessionFile(filePath) {
     if (!entrypoint && entry.entrypoint) entrypoint = entry.entrypoint;
     if (!permissionMode && entry.permissionMode) permissionMode = entry.permissionMode;
 
+    // 时间戳可能是 Unix 毫秒数或 ISO 字符串；统一转换为 ISO 字符串后比较。
     const ts = entry.timestamp;
     if (ts) {
       const isoTimestamp = typeof ts === "number" ? new Date(ts).toISOString() : ts;
@@ -110,6 +145,8 @@ async function parseSessionFile(filePath) {
         const firstText = extractFirstUserText(entry);
         if (firstText) firstUserMessage = firstText;
       }
+
+      // 记录用户消息中的 tool result 错误（is_error=true）。
       if (
         entry.toolUseResult &&
         typeof entry.toolUseResult === "object" &&
@@ -126,6 +163,8 @@ async function parseSessionFile(filePath) {
           : null;
         toolResultErrors.push({ content, timestamp: errTs });
       }
+
+      // 收集 tool_result 块，按 tool_use_id 索引，后续与 assistant 的 tool_use 配对。
       const messageContent = entry.message?.content;
       if (Array.isArray(messageContent)) {
         const resultTs = ts ? (typeof ts === "number" ? new Date(ts).toISOString() : ts) : null;
@@ -140,13 +179,17 @@ async function parseSessionFile(filePath) {
         }
       }
     }
+
     if (entry.type === "assistant") {
       assistantMessageCount++;
       const isoTimestamp = ts ? (typeof ts === "number" ? new Date(ts).toISOString() : ts) : null;
       if (isoTimestamp) assistantMessageTimestamps.push(isoTimestamp);
+
       const message = entry.message || {};
       const messageModel = message.model || null;
       if (!model && messageModel && messageModel !== "<synthetic>") model = messageModel;
+
+      // 累积 token 用量，按模型 + speed + geo + tier 分桶。
       if (messageModel && messageModel !== "<synthetic>" && message.usage) {
         const usage = message.usage;
         const key = bucketKey(
@@ -165,13 +208,15 @@ async function parseSessionFile(filePath) {
         }
         accumulateBucket(tokensByModel[key], extractUsageFields(usage));
       }
+
       if (message.usage) {
         if (message.usage.service_tier) usageMetadata.service_tiers.add(message.usage.service_tier);
         if (message.usage.speed) usageMetadata.speeds.add(message.usage.speed);
         if (message.usage.inference_geo && message.usage.inference_geo !== "not_available")
           usageMetadata.inference_geos.add(message.usage.inference_geo);
       }
-      
+
+      // 收集 assistant 发起的 tool_use，后续生成 PreToolUse/PostToolUse 事件。
       const content = message.content || [];
       if (Array.isArray(content)) {
         for (const block of content) {
@@ -189,25 +234,23 @@ async function parseSessionFile(filePath) {
     }
   }
 
+  // 没有时间戳说明是空文件或无效文件，直接丢弃。
   if (!firstTimestamp) return null;
 
+  // 构造会话显示名称：customTitle > aiTitle > 第一条用户消息 > 回退名称。
   const projectName = cwd ? path.basename(cwd) : slug || `Session ${sessionId.slice(0, 8)}`;
-  
-  
-  
-  
   const fallbackName = slug
     ? `${projectName} (${slug})`
     : `${projectName} - ${sessionId.slice(0, 8)}`;
   const sessionName = customTitle || aiTitle || firstUserLabel(firstUserMessage) || fallbackName;
 
-  
+  // 记录文件修改时间，用于判断会话是否仍可能处于活跃状态。
   let fileModifiedAt = null;
   try {
     const stat = fs.statSync(filePath);
     fileModifiedAt = stat.mtimeMs;
   } catch {
-    
+    // 忽略无法获取 stat 的情况。
   }
 
   return {
@@ -249,6 +292,15 @@ async function parseSessionFile(filePath) {
   };
 }
 
+/**
+ * 解析子 agent 的 JSONL 转录文件。
+ *
+ * 结构与 parseSessionFile 类似，但关注的是子 agent 特有字段：
+ * - task：第一条用户消息内容，作为子 agent 的任务描述。
+ * - agentType：从同名的 .existingMetadata.json 中读取。
+ * - spawnedChildAgentIds：子 agent 通过 Agent 工具创建的孙 agent id 集合，
+ *   用于后续 reconcileSubagentParents 重建层级关系。
+ */
 async function parseSubagentFile(filePath) {
   const agentId = path.basename(filePath, ".jsonl").replace(/^agent-/, "");
 
@@ -267,16 +319,12 @@ async function parseSubagentFile(filePath) {
   const tokensByModel = {};
   const toolNames = new Set();
   let thinkingBlockCount = 0;
-  
-  
-  
-  const subagentToolCalls = []; 
-  const toolResultById = new Map(); 
-  
-  
-  
-  
-  
+
+  // 子 agent 的工具调用与结果配对。
+  const subagentToolCalls = [];
+  const toolResultById = new Map();
+
+  // 记录该子 agent 创建的子级 agent id。
   const spawnedChildAgentIds = new Set();
 
   for await (const line of lineReader) {
@@ -288,6 +336,7 @@ async function parseSubagentFile(filePath) {
       continue;
     }
 
+    // 子 agent 通过 Agent 工具创建新 agent 时，toolUseResult.agentId 会记录被创建 agent 的 id。
     if (entry.toolUseResult && entry.toolUseResult.agentId) {
       spawnedChildAgentIds.add(entry.toolUseResult.agentId);
     }
@@ -303,6 +352,7 @@ async function parseSubagentFile(filePath) {
     if (entry.type === "user") {
       userMessageCount++;
       const messageContent = entry.message?.content;
+      // 用第一条用户文本作为子 agent 的 task 描述。
       if (!task) {
         if (typeof messageContent === "string") {
           task = messageContent.slice(0, 500);
@@ -365,14 +415,9 @@ async function parseSubagentFile(filePath) {
         }
       }
     }
-
-    
-    if (entry.type === "progress" && entry.data?.hookEvent) {
-      
-    }
   }
 
-  
+  // 把子 agent 的工具调用和 tool_result 配对，生成标准化的工具事件。
   const normalizedToolEvents = subagentToolCalls.map((call) => {
     const result = toolResultById.get(call.id) || null;
     return {
@@ -388,7 +433,7 @@ async function parseSubagentFile(filePath) {
 
   if (!firstTimestamp) return null;
 
-  
+  // 读取 CC 生成的元数据文件，获取 agentType 等额外信息。
   const metaPath = filePath.replace(/\.jsonl$/, ".existingMetadata.json");
   try {
     if (fs.existsSync(metaPath)) {
@@ -396,7 +441,7 @@ async function parseSubagentFile(filePath) {
       if (existingMetadata.agentType) agentType = existingMetadata.agentType;
     }
   } catch {
-    
+    // 元数据文件不存在或损坏时忽略，agentType 保持 null。
   }
 
   return {
@@ -416,6 +461,12 @@ async function parseSubagentFile(filePath) {
   };
 }
 
+/**
+ * 从主会话的 assistantToolUses 中推断出由 "Agent" 工具创建的子 agent。
+ *
+ * 旧版 CC 不会在子 agent 目录下生成独立 JSONL，只会在主会话中留下 Agent 工具的调用记录。
+ * 该函数根据这些记录创建占位子 agent，状态固定为 completed。
+ */
 function importSubagents(dbModule, sessionId, mainAgentId, assistantToolUses) {
   if (!assistantToolUses || assistantToolUses.length === 0) return 0;
   const { stmts } = dbModule;
@@ -431,6 +482,7 @@ function importSubagents(dbModule, sessionId, mainAgentId, assistantToolUses) {
     const input = toolUse.input;
     agentIndex++;
 
+    // 生成确定性 id；如果已存在则跳过（幂等）。
     const subagentId = `${sessionId}-subagent-${agentIndex}`;
     if (stmts.getAgent.get(subagentId)) continue;
 
@@ -470,7 +522,15 @@ function importSubagents(dbModule, sessionId, mainAgentId, assistantToolUses) {
   return created;
 }
 
+// JSONL 子 agent 与数据库中实时子 agent 匹配时允许的时间误差（30 秒）。
 const SUBAGENT_LIVE_MATCH_TOLERANCE_MS = 30_000;
+
+/**
+ * 根据 agentType 和 startedAt 把 JSONL 解析出的子 agent 与数据库中已有的实时子 agent 匹配。
+ *
+ * 实时子 agent 由 hooks 在会话运行期间创建，JSONL 子 agent 由历史导入创建；
+ * 如果两者时间接近，则认为是同一个 agent，避免重复记录。
+ */
 function findLiveSubagentForJsonl(dbModule, sessionId, subagentData) {
   if (!subagentData.agentType || !subagentData.startedAt) return null;
   return dbModule.db
@@ -496,6 +556,12 @@ function findLiveSubagentForJsonl(dbModule, sessionId, subagentData) {
     );
 }
 
+/**
+ * 合并主会话和所有子 agent 的 token 用量桶。
+ *
+ * 同一模型/速度/地区/层级在不同 agent 间会产生独立的桶；
+ * 合并后按 bucketKey 累加，得到会话级别的总用量。
+ */
 function combineSessionTokens(session) {
   const combined = {};
   const merge = (src) => {
@@ -514,6 +580,10 @@ function combineSessionTokens(session) {
   return combined;
 }
 
+/**
+ * 把合并后的 token 桶写入 token_usage 表。
+ * 只有至少有一个非零用量字段的桶才会被写入。
+ */
 function writeSessionTokens(dbModule, sessionId, tokensByModel) {
   const { stmts } = dbModule;
   let written = 0;
@@ -538,6 +608,10 @@ function writeSessionTokens(dbModule, sessionId, tokensByModel) {
   return written;
 }
 
+/**
+ * 把 token 桶转换为写入 agents.metadata.tokens 的数组行。
+ * 保留 speed / geo / tier 等细粒度信息，供前端展示。
+ */
 function subagentTokenRows(tokensByModel) {
   const rows = [];
   for (const tokenBucket of Object.values(tokensByModel || {})) {
@@ -563,6 +637,17 @@ function subagentTokenRows(tokensByModel) {
   return rows;
 }
 
+/**
+ * 把 JSONL 解析出的子 agent 导入数据库。
+ *
+ * 关键概念：
+ * - jsonlDerivedSubagentId：由文件内容推导出的子 agent id，格式为 `<sessionId>-jsonl-<agentId>`。
+ * - liveSubagentMatch：数据库中已存在、由实时 hooks 创建的子 agent；
+ *   若匹配成功，则把 JSONL 中的元数据合并到该 live agent，而不是新建记录。
+ * - targetAgentId：最终要写入元数据和事件的目标 agent id。
+ *
+ * 返回 { created, updated }，用于调用方判断是否需要刷新 UI。
+ */
 function importSubagentFromJsonl(dbModule, sessionId, mainAgentId, subagentData) {
   if (!subagentData) return 0;
   const { db, stmts } = dbModule;
@@ -573,16 +658,13 @@ function importSubagentFromJsonl(dbModule, sessionId, mainAgentId, subagentData)
   const existingJsonlAgent = stmts.getAgent.get(jsonlDerivedSubagentId);
 
   const subName = subagentData.agentType ? subagentData.agentType : `Subagent ${subagentData.agentId.slice(0, 8)}`;
-  
-  
+
+  // 细粒度 token 行，用于写入 agents.metadata.tokens。
   const tokenRows = subagentTokenRows(subagentData.tokensByModel);
   let created = 0;
   let updated = 0;
 
-  
-  
-  
-  
+  // 如果既没有匹配到 live agent，也没有 jsonl 占位 agent，则新建一条 jsonl 来源记录。
   if (!liveSubagentMatch && !existingJsonlAgent) {
     stmts.insertAgent.run(
       jsonlDerivedSubagentId,
@@ -613,16 +695,7 @@ function importSubagentFromJsonl(dbModule, sessionId, mainAgentId, subagentData)
     created++;
   }
 
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
+  // 无论新建还是匹配到 live agent，都尝试把缺失的元数据字段补齐到 targetAgentId。
   {
     const row = stmts.getAgent.get(targetAgentId);
     if (row) {
@@ -658,10 +731,7 @@ function importSubagentFromJsonl(dbModule, sessionId, mainAgentId, subagentData)
         existingMetadata.thinking_blocks = subagentData.thinkingBlockCount;
         changed = true;
       }
-      
-      
-      
-      
+      // 只有当 tokens 数组真正发生变化时才更新，避免无意义的 metadata 写入。
       const hasTokensKey = Object.prototype.hasOwnProperty.call(existingMetadata, "tokens");
       const tokensChanged =
         tokenRows.length > 0 && JSON.stringify(existingMetadata.tokens || []) !== JSON.stringify(tokenRows);
@@ -679,17 +749,11 @@ function importSubagentFromJsonl(dbModule, sessionId, mainAgentId, subagentData)
     }
   }
 
-  
-  
-  
-  
-
   const insertEvent = db.prepare(
     "INSERT INTO events (session_id, agent_id, event_type, tool_name, tool_use_id, created_at) VALUES (?, ?, ?, ?, ?, ?)"
   );
 
-  
-  
+  // 如果没匹配到 live agent，在主 agent 下补一条 Agent 工具的 PreToolUse 事件，表示子 agent 被创建。
   if (!liveSubagentMatch) {
     const spawnExists = db
       .prepare(
@@ -709,8 +773,7 @@ function importSubagentFromJsonl(dbModule, sessionId, mainAgentId, subagentData)
     }
   }
 
-  
-  
+  // 把子 agent 内部的标准化工具事件写入 events 表；已存在的事件跳过。
   if (Array.isArray(subagentData.normalizedToolEvents) && subagentData.normalizedToolEvents.length > 0) {
     const eventExists = db.prepare(
       "SELECT 1 FROM events WHERE agent_id = ? AND event_type = ? AND tool_use_id = ? LIMIT 1"
@@ -748,11 +811,27 @@ function importSubagentFromJsonl(dbModule, sessionId, mainAgentId, subagentData)
   return { created, updated };
 }
 
+/**
+ * 把 JSONL 解析出的子 agent 映射到数据库中实际使用的 agent id。
+ *
+ * 优先查找由实时 hooks 创建的 live subagent（按 agentType + startedAt 模糊匹配）；
+ * 未匹配到时回退到 JSONL 推导出的占位 id `<sessionId>-jsonl-<agentId>`。
+ */
 function resolveSubagentDbId(dbModule, sessionId, subagentData) {
   const liveSubagentRow = findLiveSubagentForJsonl(dbModule, sessionId, subagentData);
   return liveSubagentRow ? liveSubagentRow.id : `${sessionId}-jsonl-${subagentData.agentId}`;
 }
 
+/**
+ * 根据子 agent 的 spawnedChildAgentIds 重建 parent_agent_id 层级关系。
+ *
+ * 处理流程：
+ * 1. 先构建 childId → parentId 的映射。
+ * 2. 对每个孩子，解析出 childDbId 和 parentDbId。
+ * 3. 在更新前做环检测：从 parent 开始沿现有 parent_agent_id 向上遍历，
+ *    如果碰到 childDbId 说明会形成环，则跳过。
+ * 4. 无环时更新 agents.parent_agent_id。
+ */
 function reconcileSubagentParents(dbModule, sessionId, mainAgentId, parsedSubagents) {
   if (!Array.isArray(parsedSubagents) || parsedSubagents.length < 2) return 0;
   const { stmts } = dbModule;
@@ -760,8 +839,7 @@ function reconcileSubagentParents(dbModule, sessionId, mainAgentId, parsedSubage
   const subagentById = new Map();
   for (const subagent of parsedSubagents) if (subagent && subagent.agentId) subagentById.set(subagent.agentId, subagent);
 
-  
-  
+  // 根据 spawnedChildAgentIds 推断父子关系：孩子 id → 当前 agent id。
   const childToParentMap = new Map();
   for (const subagent of parsedSubagents) {
     if (!subagent || !Array.isArray(subagent.spawnedChildAgentIds)) continue;
@@ -776,7 +854,7 @@ function reconcileSubagentParents(dbModule, sessionId, mainAgentId, parsedSubage
   let updated = 0;
   for (const subagent of parsedSubagents) {
     const parentAgentId = childToParentMap.get(subagent.agentId);
-    if (!parentAgentId) continue; 
+    if (!parentAgentId) continue;
     const parentData = subagentById.get(parentAgentId);
     if (!parentData) continue;
 
@@ -787,13 +865,9 @@ function reconcileSubagentParents(dbModule, sessionId, mainAgentId, parsedSubage
     const childRow = stmts.getAgent.get(childDbId);
     const parentRow = stmts.getAgent.get(parentDbId);
     if (!childRow || !parentRow) continue;
-    if (childRow.parent_agent_id === parentDbId) continue; 
+    if (childRow.parent_agent_id === parentDbId) continue;
 
-    
-    
-    
-    
-    
+    // 环检测：从拟议的父节点向上遍历，如果路径中已包含孩子节点则放弃更新。
     let cursor = parentDbId;
     const seen = new Set([childDbId]);
     let createsCycle = false;
@@ -813,6 +887,14 @@ function reconcileSubagentParents(dbModule, sessionId, mainAgentId, parsedSubage
   return updated;
 }
 
+/**
+ * 把单个解析后的会话对象导入数据库。
+ *
+ * 分支：
+ * - 如果会话已存在且不是 imported 来源，则跳过（保护实时 hooks 创建的会话）。
+ * - 如果会话已存在且是 imported 来源，则只增量补充缺失的事件和元数据。
+ * - 如果会话不存在，则新建 sessions、agents、events、token_usage 记录。
+ */
 function importSession(dbModule, session) {
   const { db, stmts } = dbModule;
   const existing = stmts.getSession.get(session.sessionId);
@@ -826,14 +908,7 @@ function importSession(dbModule, session) {
     );
     let wasModified = false;
 
-    
-    
-    
-    
-    
-    
-    
-    
+    // 预计算每种 event_type 的最晚时间，后续避免写入重复或更旧的事件。
     const latestEventByTypeRows = db
       .prepare(
         "SELECT event_type, MAX(created_at) AS m FROM events WHERE session_id = ? GROUP BY event_type"
@@ -847,7 +922,7 @@ function importSession(dbModule, session) {
       return !candidate || timestamp > candidate;
     };
 
-    
+    // 用 assistant 消息时间戳生成 Stop 事件；如果没有 assistant 消息，用 startedAt 兜底。
     if (session.assistantMessageTimestamps && session.assistantMessageTimestamps.length > 0) {
       let added = 0;
       for (const timestamp of session.assistantMessageTimestamps) {
@@ -864,8 +939,6 @@ function importSession(dbModule, session) {
       }
       if (added > 0) wasModified = true;
     } else if (!latestEventTimeByType.Stop) {
-      
-      
       insertEvent.run(
         session.sessionId,
         mainAgentId,
@@ -877,7 +950,7 @@ function importSession(dbModule, session) {
       wasModified = true;
     }
 
-    
+    // 把主会话中的 tool_use / tool_result 配对为 PreToolUse / PostToolUse(PostToolUseFailure) 事件。
     if (session.assistantToolUses && session.assistantToolUses.length > 0) {
       const toolExists = db.prepare(
         "SELECT 1 FROM events WHERE session_id = ? AND agent_id = ? AND event_type = ? AND tool_use_id = ? LIMIT 1"
@@ -915,19 +988,12 @@ function importSession(dbModule, session) {
       if (added > 0) wasModified = true;
     }
 
-    
+    // 如果 JSONL 路径已知，同步更新 sessions.transcript_path。
     if (session.transcriptPath) {
       stmts.setSessionTranscriptPath.run(session.transcriptPath, session.sessionId);
     }
 
-    
-    
-    
-    
-    
-    
-    
-    
+    // 如果没有独立的子 agent JSONL，就从主会话的 Agent 工具调用推断子 agent。
     const hasParsedSubs = session.parsedSubagents && session.parsedSubagents.length > 0;
     if (!hasParsedSubs) {
       const subagentCount = importSubagents(
@@ -939,13 +1005,13 @@ function importSession(dbModule, session) {
       if (subagentCount > 0) wasModified = true;
     }
 
-    
+    // 导入真正的子 agent JSONL，并重建父子关系。
     if (session.parsedSubagents && session.parsedSubagents.length > 0) {
       for (const subagentData of session.parsedSubagents) {
         const result = importSubagentFromJsonl(dbModule, session.sessionId, mainAgentId, subagentData);
         if (result.created > 0 || result.updated > 0) wasModified = true;
       }
-      
+
       if (
         reconcileSubagentParents(
           dbModule,
@@ -957,8 +1023,7 @@ function importSession(dbModule, session) {
         wasModified = true;
     }
 
-    
-    
+    // 把用户消息中标记为 is_error 的 tool result 记录为 ToolError 事件。
     if (session.toolResultErrors && session.toolResultErrors.length > 0) {
       let added = 0;
       for (const toolResultError of session.toolResultErrors) {
@@ -977,17 +1042,11 @@ function importSession(dbModule, session) {
       if (added > 0) wasModified = true;
     }
 
-    
-    
-    
-    
+    // 当消息数、入口点、轮次、thinking 块等元数据发生变化时更新 sessions.metadata。
     const metaChanged =
       existingMetadata.user_messages !== session.userMessages ||
       existingMetadata.assistant_messages !== session.assistantMessages ||
       (!existingMetadata.entrypoint && (session.entrypoint || session.turnDurationRecords?.length > 0)) ||
-      
-      
-      
       (session.turnDurationRecords && (existingMetadata.turn_count || 0) !== session.turnDurationRecords.length) ||
       (session.thinkingBlockCount || 0) > (existingMetadata.thinking_blocks || 0);
     if (metaChanged) {
@@ -1005,13 +1064,7 @@ function importSession(dbModule, session) {
       wasModified = true;
     }
 
-    
-    
-    
-    
-    
-    
-    
+    // 如果会话名是自动生成的，且 JSONL 中发现了更好的标题（custom/ai/第一条用户消息），则更新会话名。
     const firstUserMessagePreview = firstUserLabel(session.firstUserMessage);
     const transcriptTitle = session.customTitle || session.aiTitle || firstUserMessagePreview || null;
     if (transcriptTitle) {
@@ -1029,11 +1082,7 @@ function importSession(dbModule, session) {
       }
     }
 
-    
-    
-    
-    
-    
+    // 如果主 agent 的名称/任务还是自动生成的，用第一条用户消息补齐。
     if (firstUserMessagePreview) {
       const mainRow = stmts.getAgent.get(`${session.sessionId}-main`);
       if (mainRow) {
@@ -1055,8 +1104,6 @@ function importSession(dbModule, session) {
         const fillName = agentNameIsAuto && storedAgent !== desiredAgentName;
         const fillTask = !mainRow.task || !String(mainRow.task).trim();
         if (fillName || fillTask) {
-          
-          
           stmts.updateAgent.run(
             fillName ? desiredAgentName : null,
             null,
@@ -1070,6 +1117,8 @@ function importSession(dbModule, session) {
         }
       }
     }
+
+    // 更新会话结束时间，但不覆盖 active 状态的实时会话。
     if (
       session.endedAt &&
       (!existing.ended_at || session.endedAt > existing.ended_at) &&
@@ -1082,10 +1131,7 @@ function importSession(dbModule, session) {
       wasModified = true;
     }
 
-    
-    
-    
-    
+    // 只有当子 agent 有实际 token 用量时才重新合并并写入，减少无意义更新。
     if (
       session.parsedSubagents &&
       session.parsedSubagents.some(
@@ -1107,8 +1153,7 @@ function importSession(dbModule, session) {
     return wasModified ? { skipped: false, wasModified: true } : { skipped: true };
   }
 
-  
-  
+  // 以下处理会话尚不存在的情况：新建 sessions、agents、events、token_usage。
   const RECENT_THRESHOLD_MS = 10 * 60 * 1000;
   const isRecentlyActive =
     session.fileModifiedAt && Date.now() - session.fileModifiedAt < RECENT_THRESHOLD_MS;
@@ -1132,6 +1177,7 @@ function importSession(dbModule, session) {
       : 0,
   });
 
+  // 先插入会话记录，再用 UPDATE 设置 started_at / ended_at（避免 insertSession 语句参数过多）。
   stmts.insertSession.run(
     session.sessionId,
     session.name,
@@ -1147,12 +1193,11 @@ function importSession(dbModule, session) {
     session.sessionId
   );
 
-  
-  
   if (session.transcriptPath) {
     stmts.setSessionTranscriptPath.run(session.transcriptPath, session.sessionId);
   }
 
+  // 创建主 agent；如果是最近活跃的会话，则不设置 ended_at，让后续 hooks 更新。
   const mainAgentId = `${session.sessionId}-main`;
   const agentLabel = `Main Agent - ${session.name}`;
   stmts.insertAgent.run(
@@ -1162,8 +1207,6 @@ function importSession(dbModule, session) {
     "main",
     null,
     agentStatus,
-    
-    
     session.firstUserMessage || null,
     null,
     null
@@ -1174,6 +1217,7 @@ function importSession(dbModule, session) {
     mainAgentId
   );
 
+  // 把 teamName 列表转换为 team 类型的占位子 agent。
   for (const teamName of session.teams) {
     const teamAgentId = `${session.sessionId}-team-${teamName}`;
     stmts.insertAgent.run(
@@ -1194,8 +1238,6 @@ function importSession(dbModule, session) {
     );
   }
 
-  
-  
   const insertEvent = db.prepare(
     "INSERT INTO events (session_id, agent_id, event_type, tool_name, tool_use_id, created_at) VALUES (?, ?, ?, ?, ?, ?)"
   );
@@ -1273,25 +1315,31 @@ function importSession(dbModule, session) {
     }
   }
 
-  
+  // 导入子 agent JSONL 并重建层级。
   if (session.parsedSubagents && session.parsedSubagents.length > 0) {
     for (const subagentData of session.parsedSubagents) {
       importSubagentFromJsonl(dbModule, session.sessionId, mainAgentId, subagentData);
     }
-    
+
     reconcileSubagentParents(dbModule, session.sessionId, mainAgentId, session.parsedSubagents);
   }
 
+  // 首次导入时直接写入合并后的 token 总量。
   writeSessionTokens(dbModule, session.sessionId, combineSessionTokens(session));
 
   return { skipped: false };
 }
 
+/**
+ * 解析会话文件并同时加载其 subagents 目录下的子 agent JSONL。
+ *
+ * 子 agent 路径约定：
+ *   <projectPath>/<sessionId>/subagents/*.jsonl
+ */
 async function parseSessionForImport(projectPath, sourcePath) {
   const session = await parseSessionFile(sourcePath);
   if (!session) return null;
 
-  
   const subDir = path.join(projectPath, session.sessionId, "subagents");
   if (fs.existsSync(subDir)) {
     const subFiles = fs.readdirSync(subDir).filter((sessionFile) => sessionFile.endsWith(".jsonl"));
@@ -1301,7 +1349,7 @@ async function parseSessionForImport(projectPath, sourcePath) {
         const subagentData = await parseSubagentFile(path.join(subDir, subagentFile));
         if (subagentData) session.parsedSubagents.push(subagentData);
       } catch {
-        
+        // 单个子 agent 文件解析失败不影响整体导入。
       }
     }
   }
@@ -1310,6 +1358,12 @@ async function parseSessionForImport(projectPath, sourcePath) {
   return session;
 }
 
+/**
+ * 全量导入 ~/.claude/projects/ 下所有 JSONL 文件。
+ *
+ * 每个 project 目录下的会话会先解析到内存，然后以事务批量导入，
+ * 提升性能并保证原子性。
+ */
 async function importAllSessions(dbModule) {
   if (!fs.existsSync(PROJECTS_DIR)) return { imported: 0, skipped: 0, errors: 0 };
 
@@ -1358,6 +1412,13 @@ async function importAllSessions(dbModule) {
   return { imported, skipped, errors };
 }
 
+/**
+ * 增量同步默认项目目录。
+ *
+ * 使用 mtimeCache 记录每个文件上次修改时间，只有文件发生变更或数据库中的
+ * updated_at 早于文件 mtime 时才重新解析导入。返回 changed 列表供调用方
+ * 向 SSE 客户端推送更新。
+ */
 async function syncDefaultProjects(dbModule, options = {}) {
   const mtimeCache = options.mtimeCache instanceof Map ? options.mtimeCache : new Map();
   const changed = [];
@@ -1390,20 +1451,14 @@ async function syncDefaultProjects(dbModule, options = {}) {
       } catch {
         continue;
       }
-      if (mtimeCache.get(sourcePath) === mtime) continue; 
+      // 文件 mtime 与缓存一致时直接跳过。
+      if (mtimeCache.get(sourcePath) === mtime) continue;
 
       try {
         const sessionId = path.basename(file, ".jsonl");
         const existingRow = dbModule.stmts.getSession.get(sessionId);
-        
-        
-        
-        
-        
-        
-        
-        
-        
+
+        // 如果数据库中的 updated_at 已经不早于文件 mtime，说明已经同步过。
         if (existingRow) {
           const seenMs = Date.parse(existingRow.updated_at);
           if (Number.isFinite(seenMs) && mtime <= seenMs) {
@@ -1413,27 +1468,21 @@ async function syncDefaultProjects(dbModule, options = {}) {
         }
         const existed = !!existingRow;
         const session = await parseSessionForImport(projectPath, sourcePath);
-        
-        
+
         mtimeCache.set(sourcePath, mtime);
         if (!session) continue;
 
         const result = importSession(dbModule, session);
-        
-        
+
+        // 新会话或非 skipped（即有更新）才加入 changed 列表。
         if (!existed || !result.skipped) {
           changed.push({ sessionId: session.sessionId, isNew: !existed });
         }
-        
-        
-        
-        
-        
-        
-        
+
+        // 每处理完一个文件让出事件循环，避免阻塞服务端其他请求。
         await new Promise((resolve) => setImmediate(resolve));
       } catch {
-        
+        // 单个文件失败不影响后续文件。
       }
     }
   }
@@ -1441,6 +1490,12 @@ async function syncDefaultProjects(dbModule, options = {}) {
   return { changed };
 }
 
+/**
+ * 重新计算所有 imported 会话的 token 总量。
+ *
+ * 用于修复早期导入逻辑中的 token 统计遗漏，或子 agent token 未合并到会话级别的问题。
+ * 每 50 条记录批量 flush 一次，并定期调用 onProgress 回调。
+ */
 async function reconcileTokens(dbModule, options = {}) {
   const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
   const counters = { reconciled: 0, sessionsTouched: 0, modelsWritten: 0, missingFiles: 0 };
@@ -1451,8 +1506,7 @@ async function reconcileTokens(dbModule, options = {}) {
     .filter((directoryEntry) => directoryEntry.isDirectory())
     .map((directoryEntry) => directoryEntry.name);
 
-  
-  
+  // 建立 sessionId → JSONL 路径的索引，方便后续快速定位文件。
   const sessionPaths = new Map();
   for (const projectDir of projectDirs) {
     const projectPath = path.join(PROJECTS_DIR, projectDir);
@@ -1468,6 +1522,7 @@ async function reconcileTokens(dbModule, options = {}) {
     }
   }
 
+  // 只处理 metadata 中标记为 imported 的会话，避免覆盖实时 hooks 生成的数据。
   const importedSessionIds = dbModule.db
     .prepare("SELECT id FROM sessions WHERE metadata LIKE '%\"imported\":true%'")
     .all();
@@ -1505,7 +1560,7 @@ async function reconcileTokens(dbModule, options = {}) {
         continue;
       }
 
-      
+      // 重新加载子 agent 并合并 token。
       const subPaths = findSessionSubagents(jsonlPath);
       if (subPaths.length > 0) {
         session.parsedSubagents = [];
@@ -1514,7 +1569,7 @@ async function reconcileTokens(dbModule, options = {}) {
             const subagentData = await parseSubagentFile(subagentPath);
             if (subagentData) session.parsedSubagents.push(subagentData);
           } catch {
-            
+            // 单个子 agent 失败不影响会话级校正。
           }
         }
       }
@@ -1530,7 +1585,7 @@ async function reconcileTokens(dbModule, options = {}) {
         counters.reconciled++;
       }
     } catch {
-      
+      // 单个会话失败继续处理下一个。
     }
 
     if (processed % 25 === 0) onProgress({ processed, total, counters });
@@ -1575,7 +1630,7 @@ if (require.main === module) {
       const result = await reconcileTokens(dbModule, {
         onProgress: ({ processed, total, counters }) => {
           process.stdout.write(
-            `  reconciling ${processed}/${total} (touched: ${counters.sessionsTouched}, models: ${counters.modelsWritten})\result`
+            `  reconciling ${processed}/${total} (touched: ${counters.sessionsTouched}, models: ${counters.modelsWritten})\r`
           );
         },
       });
@@ -1665,6 +1720,14 @@ if (require.main === module) {
   });
 }
 
+/**
+ * 递归收集目录下所有 .jsonl 文件。
+ *
+ * 特点：
+ * - 使用栈实现深度优先遍历，避免递归调用栈溢出。
+ * - 通过 realpath 和 seen 集合处理符号链接，防止循环链接导致死循环。
+ * - 同时处理普通文件、目录和符号链接。
+ */
 function collectJsonlFiles(rootDir) {
   const jsonlFilePaths = [];
   const stack = [rootDir];
@@ -1697,7 +1760,7 @@ function collectJsonlFiles(rootDir) {
           if (rootStats.isDirectory()) stack.push(fullPath);
           else if (rootStats.isFile() && fullPath.endsWith(".jsonl")) jsonlFilePaths.push(fullPath);
         } catch {
-          
+          // 忽略无法解析的符号链接。
         }
       }
     }
@@ -1705,19 +1768,24 @@ function collectJsonlFiles(rootDir) {
   return jsonlFilePaths;
 }
 
+/**
+ * 根据文件所在目录判断 JSONL 是主会话还是子 agent。
+ *
+ * 约定：路径中包含 "subagents" 目录的为子 agent。
+ */
 function classifyJsonl(filePath) {
-  
-  
-  
-  
-  
-  
-  
   const segments = path.dirname(filePath).split(path.sep);
   if (segments.includes("subagents")) return "subagent";
   return "session";
 }
 
+/**
+ * 查找某个会话 JSONL 对应的子 agent 文件列表。
+ *
+ * 兼容两种目录结构：
+ * - <dir>/<sessionId>/subagents/*.jsonl
+ * - <dir>/subagents/<sessionId>/*.jsonl
+ */
 function findSessionSubagents(sessionJsonlPath) {
   const dir = path.dirname(sessionJsonlPath);
   const sessionId = path.basename(sessionJsonlPath, ".jsonl");
@@ -1732,13 +1800,18 @@ function findSessionSubagents(sessionJsonlPath) {
       const files = fs.readdirSync(candidate).filter((sessionFile) => sessionFile.endsWith(".jsonl"));
       for (const sessionFile of files) result.push(path.join(candidate, sessionFile));
     } catch {
-      
+      // 忽略无法读取的目录。
     }
   }
   return result;
 }
 
-
+/**
+ * 从任意目录递归扫描 JSONL 并导入。
+ *
+ * 与 importAllSessions 不同，该方法不限于 ~/.claude/projects/，
+ * 支持用户指定自定义目录；同时会处理独立的子 agent JSONL 文件。
+ */
 async function importFromDirectory(dbModule, rootDir, options = {}) {
   const onProgress = typeof options.onProgress === "function" ? options.onProgress : () => {};
   const counters = {
@@ -1783,7 +1856,7 @@ async function importFromDirectory(dbModule, rootDir, options = {}) {
         continue;
       }
 
-      
+      // 尝试加载该会话对应的子 agent JSONL。
       const subPaths = findSessionSubagents(sessionFile);
       if (subPaths.length > 0) {
         session.parsedSubagents = [];
@@ -1792,14 +1865,11 @@ async function importFromDirectory(dbModule, rootDir, options = {}) {
             const subagentData = await parseSubagentFile(subagentPath);
             if (subagentData) session.parsedSubagents.push(subagentData);
           } catch {
-            
+            // 单个子 agent 失败不影响主会话。
           }
         }
       }
 
-      
-      
-      
       session._sourceJsonlPath = sessionFile;
       parsedSessions.push(session);
       counters.sessionsSeen++;
@@ -1817,6 +1887,7 @@ async function importFromDirectory(dbModule, rootDir, options = {}) {
     }
   }
 
+  // 事务批量导入主会话。
   if (parsedSessions.length > 0) {
     const importBatch = dbModule.db.transaction((sessions) => {
       for (const session of sessions) {
@@ -1833,13 +1904,7 @@ async function importFromDirectory(dbModule, rootDir, options = {}) {
     importBatch(parsedSessions);
   }
 
-  
-  
-  
-  
-  
-  
-  
+  // 处理独立的子 agent JSONL（路径结构与传统不同），尝试从目录名推断所属 sessionId。
   if (standaloneSubagentFiles.length > 0) {
     for (const subagentFile of standaloneSubagentFiles) {
       try {
@@ -1848,6 +1913,7 @@ async function importFromDirectory(dbModule, rootDir, options = {}) {
         const parts = subagentFile.split(path.sep);
         const subagentsDirIndex = parts.lastIndexOf("subagents");
         if (subagentsDirIndex < 0) continue;
+        // 可能的 sessionId 候选：subagents 的父目录名或子目录名。
         const candidates = [];
         if (subagentsDirIndex - 1 >= 0) candidates.push(parts[subagentsDirIndex - 1]);
         if (subagentsDirIndex + 1 < parts.length) candidates.push(parts[subagentsDirIndex + 1]);
@@ -1880,6 +1946,12 @@ async function importFromDirectory(dbModule, rootDir, options = {}) {
   return counters;
 }
 
+/**
+ * 根据 transcript 路径扫描并导入该会话的子 agent JSONL。
+ *
+ * 常用于实时 hooks 触发：当检测到会话的 transcript 文件更新时，
+ * 扫描同目录下的 subagents 文件夹，把新的子 agent 数据补充进数据库。
+ */
 async function scanAndImportSubagents(dbModule, sessionId, transcriptPath, opts = {}) {
   if (!sessionId || !transcriptPath) return { imported: 0, created: 0 };
   const subDir = path.join(path.dirname(transcriptPath), sessionId, "subagents");
@@ -1903,35 +1975,20 @@ async function scanAndImportSubagents(dbModule, sessionId, transcriptPath, opts 
       parsedSubagents.push(subagentData);
       created += importSubagentFromJsonl(dbModule, sessionId, mainAgentId, subagentData).created;
     } catch {
-      
+      // 单个子 agent 失败不影响整体扫描。
     }
   }
 
-  
-  
-  
+  // 重建父子关系。
   let reparented = 0;
   try {
     reparented = reconcileSubagentParents(dbModule, sessionId, mainAgentId, parsedSubagents);
   } catch {
-    
+    // 关系重建失败不影响已导入数据。
   }
 
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
+  // 只把父 agent（主会话）没有用到的模型 token 写入会话级别，
+  // 避免重复统计已经通过主会话 events 计算过的 token。
   if (parsedSubagents.length > 0) {
     try {
       const parentModels = new Set();
@@ -1943,32 +2000,32 @@ async function scanAndImportSubagents(dbModule, sessionId, transcriptPath, opts 
       const combined = combineSessionTokens({ tokensByModel: null, parsedSubagents });
       const subOnly = {};
       for (const [key, tokenBucket] of Object.entries(combined)) {
-        
-        
-        
-        
-        
-        
-        
         if (tokenBucket.model && !parentModels.has(tokenBucket.model)) subOnly[key] = tokenBucket;
       }
       writeSessionTokens(dbModule, sessionId, subOnly);
     } catch {
-      
+      // token 写入失败不中断流程。
     }
   }
 
   return { imported: subFiles.length, created, reparented };
 }
 
+/**
+ * 向后兼容：为没有 tokens 元数据的子 agent 补充 token 信息。
+ *
+ * 查询条件：
+ * - agent 类型为 subagent 且不是 compaction 类型。
+ * - agent.metadata 中不存在 "tokens" 字段。
+ *
+ * 通过 transcript_path 或 metadata.slug 定位 JSONL 文件，再调用
+ * importSubagentFromJsonl 把细粒度 token 写入 metadata。
+ */
 async function backfillSubagentTokenMetadata(dbModule) {
   const { db } = dbModule;
   let sessions;
   try {
-    
-    
-    
-    
+    // 找出所有需要补充 token 元数据的会话（按 session 去重）。
     sessions = db
       .prepare(
         `SELECT DISTINCT s.id AS session_id, s.transcript_path AS tp,
@@ -1985,10 +2042,7 @@ async function backfillSubagentTokenMetadata(dbModule) {
   let stamped = 0;
   let scanned = 0;
   for (const sessionRow of sessions) {
-    
-    
-    
-    
+    // 优先使用数据库存储的 transcript_path；如果不存在则通过 slug 推断。
     let transcriptPath = sessionRow.tp && fs.existsSync(sessionRow.tp) ? sessionRow.tp : null;
     if (!transcriptPath) {
       let slug = null;
@@ -1999,13 +2053,11 @@ async function backfillSubagentTokenMetadata(dbModule) {
       }
       if (slug) {
         const candidate = path.join(PROJECTS_DIR, slug, `${sessionRow.session_id}.jsonl`);
-        
-        
-        
+        // 只要候选目录存在就尝试使用，即使具体文件尚未写入。
         if (fs.existsSync(path.dirname(candidate))) transcriptPath = candidate;
       }
     }
-    if (!transcriptPath) continue; 
+    if (!transcriptPath) continue;
     let subFiles;
     try {
       subFiles = findSessionSubagents(transcriptPath);
@@ -2022,7 +2074,7 @@ async function backfillSubagentTokenMetadata(dbModule) {
         const result = importSubagentFromJsonl(dbModule, sessionRow.session_id, mainAgentId, subagentData);
         if (result.updated > 0) stamped++;
       } catch {
-
+        // 单个子 agent 失败不影响后续填充。
       }
     }
   }

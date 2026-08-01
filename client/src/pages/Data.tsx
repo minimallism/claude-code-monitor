@@ -314,6 +314,7 @@ export function Data() {
                         </div>
                       </td>
                       <td className="text-center px-3 py-3 text-xs font-mono text-slate-400">
+                        {/* 会话数列：总数固定 3ch 右对齐；活跃数固定 4ch 左对齐，无活跃时用 invisible 占位保持列宽稳定。 */}
                         <div className="inline-flex items-baseline justify-center">
                           <span className="tabular-nums text-right min-w-[3ch]">{project.session_count}</span>
                           <span

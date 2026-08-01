@@ -1,3 +1,5 @@
+// 数据库后端选择：优先 better-sqlite3（性能更好），不可用时回退到 node:sqlite（Node 22+）。
+// 两者都不可用时给出明确安装/升级提示，避免运行时出现难以理解的 native 模块错误。
 let Database;
 try {
   Database = require("better-sqlite3");
@@ -26,6 +28,7 @@ const path = require("path");
 const fs = require("fs");
 const { getDataDir } = require("./lib/claude-home");
 
+// 数据库文件路径：优先使用环境变量，否则放在数据目录下。
 const DB_PATH = process.env.DASHBOARD_DB_PATH || path.join(getDataDir(), "dashboard.db");
 const DB_DIR = path.dirname(DB_PATH);
 
@@ -33,11 +36,17 @@ fs.mkdirSync(DB_DIR, { recursive: true });
 
 const db = new Database(DB_PATH);
 
+// WAL 模式：提高并发写入性能，避免长时间锁表。
+// foreign_keys = ON：启用外键级联删除。
+// busy_timeout = 5000：等待锁释放最多 5 秒，减少并发冲突。
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 db.pragma("busy_timeout = 5000");
 
 db.exec(`
+  -- 会话表：每个 Claude Code 会话一行。
+  -- status 状态机：active -> (completed | error)。
+  -- awaiting_input_since 用于 UI 显示"等待用户输入"，不表示会话终态。
   CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     name TEXT,
@@ -52,6 +61,8 @@ db.exec(`
     metadata TEXT
   );
 
+  -- Agent 表：每个会话有一个 main agent，可能有多个 subagent。
+  -- parent_agent_id 构成嵌套调用链；ON DELETE SET NULL 避免父 agent 删除时级联误删子 agent。
   CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
@@ -71,6 +82,8 @@ db.exec(`
     FOREIGN KEY (parent_agent_id) REFERENCES agents(id) ON DELETE SET NULL
   );
 
+  -- 事件表：记录 Claude Code hook 事件。
+  -- tool_use_id 用于配对 PreToolUse -> PostToolUse/PostToolUseFailure，计算工具调用成功率。
   CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
@@ -83,6 +96,7 @@ db.exec(`
     FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL
   );
 
+  -- Token 使用表：按 (session_id, model) 聚合，便于快速读取会话总 token。
   CREATE TABLE IF NOT EXISTS token_usage (
     session_id TEXT NOT NULL,
     model TEXT NOT NULL DEFAULT 'unknown',
@@ -94,6 +108,7 @@ db.exec(`
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
   );
 
+  -- 基础索引：分别按单字段过滤/排序使用。
   CREATE INDEX IF NOT EXISTS idx_agents_session ON agents(session_id);
   CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
   CREATE INDEX IF NOT EXISTS idx_agents_parent ON agents(parent_agent_id);
@@ -103,20 +118,23 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
   CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at DESC);
 
-  -- Composite indexes for frequent query patterns (columns that exist at table creation time)
+  -- 复合索引：覆盖常用查询模式，减少回表。
   CREATE INDEX IF NOT EXISTS idx_events_session_type ON events(session_id, event_type);
-  -- Subagent JSONL import dedups tool events by agent_id + event_type.
-  -- Without an agent_id index that is a full events-table scan per tool event;
-  -- on a large DB a single re-import (e.g. the startup sync sweep re-touching a
-  -- session with many subagents) becomes tens of seconds and blocks the event
-  -- loop. This composite narrows each dedup to the agent's events of that type.
+
+  -- 子 agent JSONL 导入时，需要按 agent_id + event_type 去重工具事件。
+  -- 如果没有 agent_id 索引，每次去重都会触发全表扫描；在大量子 agent 重导入时
+  -- 可能耗时数十秒并阻塞事件循环。该复合索引把扫描范围缩小到单个 agent 的同类事件。
   CREATE INDEX IF NOT EXISTS idx_events_agent_type ON events(agent_id, event_type);
   CREATE INDEX IF NOT EXISTS idx_agents_session_type ON agents(session_id, type);
   CREATE INDEX IF NOT EXISTS idx_sessions_status_updated ON sessions(status, updated_at DESC);
+
+  -- 部分索引：只看 active 且有转录本路径的会话，供看门狗和同步扫描使用。
   CREATE INDEX IF NOT EXISTS idx_sessions_active_tp ON sessions(status, transcript_path)
     WHERE status='active' AND transcript_path IS NOT NULL;
 `);
 
+// 启动修复：如果某会话已经是 completed/error，但其下的 agent 仍标记为 working/waiting，
+// 则把这些 agent 也改为 completed。防止服务异常退出后状态不一致。
 db.prepare(
   `
   UPDATE agents SET
@@ -186,6 +204,8 @@ const stmts = {
     "UPDATE agents SET awaiting_input_since = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE session_id = ? AND awaiting_input_since IS NOT NULL"
   ),
 
+  // 递归 CTE：从每个 session 的根 agent 出发，沿 parent_agent_id 找到嵌套最深的、
+  // 状态为 working 的子 agent。用于把工具调用事件正确归因到实际执行的子 agent。
   findDeepestWorkingAgent: db.prepare(`
     WITH RECURSIVE agent_depth AS (
       SELECT id, parent_agent_id, 0 as depth
@@ -293,6 +313,9 @@ const stmts = {
     LIMIT 20
   `),
 
+  // 工具平均耗时：为每个 PreToolUse 找到同一 session 中同 tool_name 的下一个
+  // PostToolUse/PostToolUseFailure 事件，用 julianday 差值计算毫秒耗时。
+  // HAVING 过滤 0~300000ms（5 分钟）避免异常数据影响平均值。
   toolAvgDurations: db.prepare(`
     SELECT tool_name,
            AVG(duration_ms) as avg_duration_ms
@@ -354,6 +377,9 @@ const stmts = {
     ORDER BY count DESC
   `),
 
+  // 工具调用统计：以 PreToolUse 为"尝试"，用 tool_use_id 左连接对应的
+  // PostToolUse（成功）和 PostToolUseFailure（失败）。
+  // 使用 COUNT(DISTINCT tool_use_id) 避免同一 tool_use_id 出现多个 PostToolUse 时重复计数。
   sessionToolCallCounts: db.prepare(`
     SELECT
       COUNT(DISTINCT p.tool_use_id) as attempts,
@@ -387,6 +413,12 @@ const stmts = {
   `),
 };
 
+/**
+ * 清理孤儿会话：当会话的转录本或 cwd 目录已经不存在时，认为该会话已被用户外部删除，
+ * 从数据库中移除并清理相关文件。同时删除 ~/.claude/projects 下的空目录。
+ *
+ * 注意：该函数在每个 /api 请求（除 hooks 外）时被调用，作为轻量级清理。
+ */
 function cleanupOrphanedSessions() {
   const fs = require("fs");
   const path = require("path");
@@ -413,7 +445,7 @@ function cleanupOrphanedSessions() {
     }
     if (removed > 0) console.log(`[cleanup] removed ${removed} orphaned session(s)`);
 
-    // remove empty project directories
+    // 删除空 project 目录，保持 ~/.claude/projects 整洁。
     const { getProjectsDir } = require("./lib/claude-home");
     const projectsDir = getProjectsDir();
     if (fs.existsSync(projectsDir)) {
@@ -426,7 +458,7 @@ function cleanupOrphanedSessions() {
       }
     }
   } catch {
-    // non-critical
+    // 清理失败不影响主业务，静默忽略。
   }
 }
 

@@ -74,31 +74,55 @@ export interface Agent {
   awaiting_input_since?: string | null;
 }
 
+/**
+ * 判断会话是否处于"等待用户输入"状态。
+ *
+ * 规则：
+ * - 必须有 awaiting_input_since 时间戳。
+ * - 会话状态必须是 active（completed/error 不应显示 waiting）。
+ * - 如果有任何子 agent 仍在工作，则优先显示 active，不显示 waiting。
+ */
 export function isSessionAwaitingInput(session: Session | undefined | null): boolean {
   return !!session?.awaiting_input_since && session.status === "active" && !(session.has_working_subagent === 1);
 }
 
+/**
+ * 判断单个 agent 是否处于"等待用户输入"状态。
+ * 只有非终态（非 completed/error）的 agent 才会显示 waiting。
+ */
 export function isAgentAwaitingInput(agent: Agent | undefined | null): boolean {
   if (!agent?.awaiting_input_since) return false;
-  
+
   return agent.status !== "completed" && agent.status !== "error";
 }
 
+/**
+ * 返回 agent 在 UI 上应显示的有效状态。
+ * 内部状态只有 working/waiting/completed/error，但 UI 会把 awaiting_input 单独映射为一种视觉状态。
+ */
 export function effectiveAgentStatus(agent: Agent): EffectiveAgentStatus {
   return isAgentAwaitingInput(agent) ? AWAITING_STATUS : agent.status;
 }
 
+/**
+ * 返回会话在 UI 上应显示的有效状态。
+ *
+ * 优先级：
+ * 1. 只要有任何 agent 在工作（或后端标记 has_working_subagent），显示 active。
+ * 2. 否则如果会话在等待用户输入，显示 waiting。
+ * 3. 否则回退到 sessions 表中的原始状态。
+ */
 export function effectiveSessionStatus(session: Session, agents: Agent[] = []): EffectiveSessionStatus {
   const hasWorkingAgent = agents.some((agent) => agent.status === "working") || session.has_working_subagent === 1;
-  
+
   if (hasWorkingAgent) {
     return "active";
   }
-  
+
   if (isSessionAwaitingInput(session)) {
     return AWAITING_STATUS;
   }
-  
+
   return session.status;
 }
 

@@ -1,11 +1,18 @@
+/**
+ * 分析页 API。
+ *
+ * 提供比首页更详细的统计：按模型聚合 token、工具调用成功率/平均耗时、
+ * 每日会话数、每日会话状态分布、每日 token 趋势等。
+ *
+ * 时区处理与 stats.js 一致，使用前端传入的 tz_offset 进行本地时区转换。
+ */
+
 const { Router } = require("express");
 const { stmts, db } = require("../db");
 
 const router = Router();
 
 router.get("/", (req, res) => {
-  
-  
   const rawOffset = parseInt(req.query.tz_offset, 10);
   const tzModifier = Number.isFinite(rawOffset) ? `${-rawOffset} minutes` : "+0 minutes";
   const toUTC = Number.isFinite(rawOffset) ? `${rawOffset} minutes` : "+0 minutes";
@@ -14,7 +21,7 @@ router.get("/", (req, res) => {
   const toolUsage = stmts.toolUsageCounts.all();
   const toolDurations = stmts.toolAvgDurations.all();
 
-  // merge avg_duration_ms into tool_usage
+  // 把每个工具的平均耗时合并到工具使用统计对象中，前端只需遍历一个数组。
   const durationByToolName = Object.fromEntries(toolDurations.map((durationRow) => [durationRow.tool_name, durationRow.avg_duration_ms]));
   for (const toolUsageRow of toolUsage) {
     toolUsageRow.avg_duration_ms = durationByToolName[toolUsageRow.tool_name] ?? null;
@@ -40,7 +47,6 @@ router.get("/", (req, res) => {
     )
     .all();
 
-
   res.json({
     tokens: {
       total_input: tokenTotals?.total_input ?? 0,
@@ -51,6 +57,7 @@ router.get("/", (req, res) => {
     tokens_by_model: tokensByModel,
     tool_usage: toolUsage,
     daily_sessions: dailySessions,
+    // 把按 (date, status) 平铺的行转换为 { date, completed, error, active } 对象，便于图表使用。
     daily_session_statuses: Object.entries(
       dailySessionStatuses.reduce((groupedByDate, statusRow) => {
         if (!groupedByDate[statusRow.date]) groupedByDate[statusRow.date] = { date: statusRow.date, completed: 0, error: 0, active: 0 };
