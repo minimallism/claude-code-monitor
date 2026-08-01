@@ -1,0 +1,80 @@
+{
+  "greeting": {
+    "morning": "Good morning",
+    "afternoon": "Good afternoon",
+    "evening": "Good evening",
+    "night": "Working late"
+  },
+  "tagline": "Your agents, on one screen.",
+  "sub1": "Stream Claude Code events locally and sync every session in real time.",
+  "sub2": "Tokens, costs, tool calls, and subagent hierarchies — all visible at a glance.",
+  "brand": "Claude Code Monitor",
+  "taglines": [
+    "Your agents, on one screen.",
+    "See your agents clearly, from here.",
+    "Real-time insight into every Claude Code session.",
+    "Connect the event stream. Build observability.",
+    "Make your AI workflows visible.",
+    "A local-first command center for agents.",
+    "Every tool call leaves a trace.",
+    "No subagent is too deep to follow.",
+    "Cost, performance, and state — live in one place.",
+    "Turn scattered sessions into a single view.",
+    "Observe agents like you observe system metrics.",
+    "Data stays local. Insight stays close.",
+    "From the first prompt to the final result, fully visible.",
+    "See not just the outcome, but the process.",
+    "A real-time cockpit for Claude Code.",
+    "Every token, accounted for."
+  ],
+  "subs": [
+    [
+      "Stream Claude Code events locally",
+      "Sessions and agents sync in real time."
+    ],
+    [
+      "Aggregate tokens and costs automatically",
+      "Per model, per agent, down to every single call."
+    ],
+    [
+      "Import historical JSONL in one pass",
+      "New runs and old records, unified in one view."
+    ],
+    [
+      "Rebuild subagent hierarchies automatically",
+      "Parent-child relationships and concurrent delegation, fully rendered."
+    ],
+    [
+      "SQLite storage, fully local",
+      "No cloud, no account, no telemetry."
+    ],
+    [
+      "SSE long-lived connection",
+      "Browser refreshes in milliseconds, no polling needed."
+    ],
+    [
+      "Hooks flow straight to the dashboard",
+      "SessionStart, ToolUse, SessionEnd — all captured."
+    ],
+    [
+      "Watchdog keeps state honest",
+      "Abnormal interruptions are detected, so status never hangs."
+    ],
+    [
+      "Cost breakdown by model",
+      "Cache hits, input, and output — all in plain sight."
+    ],
+    [
+      "Search, filter, and replay",
+      "Find critical runs quickly across massive session history."
+    ],
+    [
+      "Terminal aesthetics meet dashboard design",
+      "Engineer-first UI with maximum information density."
+    ],
+    [
+      "Built for resumes and interviews",
+      "Full-stack, real-time, and data-driven."
+    ]
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "brand": "Claude Code 监控",
+  "brandSub": "",
+  "dashboard": "首页",
+  "sessions": "会话",
+  "analytics": "分析",
+  "data": "数据",
+  "settings": "设置",
+  "language": "语言",
+  "expand": "展开侧边栏",
+  "collapse": "收起侧边栏",
+  "collapseShort": "收起",
+  "scrollUp": "向上滚动导航",
+  "scrollDown": "向下滚动导航",
+  "switchLanguage": "切换为{{language}}",
+  "languageNames": {
+    "en": "英文",
+    "zh": "中文"
+  },
+  "languageShort": {
+    "en": "EN",
+    "zh": "中文"
+  }
+}

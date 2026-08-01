@@ -1,0 +1,41 @@
+{
+  "title": "设置",
+  "subtitle": "管理钩子和数据",
+
+  "hooks": {
+    "title": "钩子配置",
+    "description": "Claude Code 钩子将事件实时转发到仪表盘。",
+    "allInstalled": "所有钩子已安装",
+    "incomplete": "钩子不完整",
+    "reinstall": "重新安装钩子",
+    "success": "钩子安装成功",
+    "failed": "钩子安装失败"
+  },
+  "messages": {
+    "failedLoad": "加载失败",
+    "failedSave": "保存失败",
+    "failedDelete": "删除失败",
+    "unknownError": "未知错误",
+    "actionFailed": "错误：{{message}}"
+  },
+
+  "cleanupTitle": "清理项目会话数据",
+  "cleanupDesc": "删除指定项目的所有会话记录（JSONL 文件和数据库记录）。",
+  "cleanupPath": "目录路径：{{path}}",
+  "noProjects": "暂无项目数据",
+  "projectsList": "项目列表",
+  "deleteAll": "清除所有",
+  "confirmDeleteProjectTitle": "清除项目数据",
+  "confirmDeleteProject": "确定要清除「{{project}}」的所有会话数据吗？此操作不可恢复。",
+  "confirmDeleteAllTitle": "清除所有数据",
+  "confirmDeleteAll": "确定要清除全部 {{count}} 个项目的所有会话数据吗？此操作不可恢复。",
+  "deleteSuccess": "已清除 {{files}} 个文件、{{sessions}} 条记录",
+  "deleteAllSuccess": "已清除所有项目数据",
+  "deleteFailed": "清除失败",
+  "diskUsage": "磁盘占用",
+  "tokenUsage": "Token 消耗",
+  "lastActivity": "最后活跃",
+  "project": "项目",
+  "sessionCount": "会话数",
+  "copyPath": "复制路径"
+}

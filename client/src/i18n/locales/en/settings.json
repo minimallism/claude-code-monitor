@@ -1,0 +1,41 @@
+{
+  "title": "Settings",
+  "subtitle": "Manage hooks and data",
+
+  "hooks": {
+    "title": "Hook Configuration",
+    "description": "Claude Code hooks forward events to the dashboard in real time.",
+    "allInstalled": "All hooks installed",
+    "incomplete": "Hooks incomplete",
+    "reinstall": "Reinstall Hooks",
+    "success": "Hooks installed successfully",
+    "failed": "Hook installation failed"
+  },
+  "messages": {
+    "failedLoad": "Failed to load",
+    "failedSave": "Failed to save",
+    "failedDelete": "Failed to delete",
+    "unknownError": "Unknown",
+    "actionFailed": "Error: {{message}}"
+  },
+
+  "cleanupTitle": "Clean up project session data",
+  "cleanupDesc": "Delete all session records (JSONL files and database entries) for selected projects.",
+  "cleanupPath": "File path: {{path}}",
+  "noProjects": "No project data available",
+  "projectsList": "Projects",
+  "deleteAll": "Delete all",
+  "confirmDeleteProjectTitle": "Delete Project Data",
+  "confirmDeleteProject": "Are you sure you want to delete all session data for \"{{project}}\"? This action cannot be undone.",
+  "confirmDeleteAllTitle": "Delete All Data",
+  "confirmDeleteAll": "Are you sure you want to delete all session data for all {{count}} projects? This action cannot be undone.",
+  "deleteSuccess": "Deleted {{files}} files, {{sessions}} records",
+  "deleteAllSuccess": "Deleted all project data",
+  "deleteFailed": "Failed to delete",
+  "diskUsage": "Disk usage",
+  "tokenUsage": "Token usage",
+  "lastActivity": "Last activity",
+  "project": "Project",
+  "sessionCount": "Sessions",
+  "copyPath": "Copy path"
+}

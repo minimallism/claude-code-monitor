@@ -1,0 +1,27 @@
+{
+  "title": "Settings",
+  "subtitle": "System / Hooks / Processes",
+  "uptime": "Uptime",
+  "memory": "Memory",
+  "dbSize": "DB Size",
+  "processList": "Claude Processes",
+  "processCount": "processes",
+  "noProcesses": "No Claude processes running",
+  "loading": "Loading...",
+  "pid": "PID",
+  "user": "User",
+  "state": "State",
+  "cpu": "CPU",
+  "processMemory": "Memory",
+  "cwd": "CWD",
+  "command": "Command",
+  "action": "Action",
+  "kill": {
+    "title": "Kill process",
+    "confirmTitle": "Confirm kill process",
+    "confirmMessage": "Are you sure you want to terminate Claude process {{pid}}?\nCWD: {{cwd}}\nThis will forcibly end the process and may result in data loss for the corresponding session.",
+    "confirm": "Kill",
+    "cancel": "Cancel",
+    "success": "Process {{pid}} terminated"
+  }
+}

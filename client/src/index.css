@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #272735 #111118;
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: #111118;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: #272735;
+    border-radius: 3px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: #35354a;
+  }
+
+  ::selection {
+    background: rgba(34, 211, 238, 0.25);
+    color: #e2e8f0;
+  }
+
+  ::-webkit-calendar-picker-indicator {
+    filter: invert(1) brightness(0.8);
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+  }
+
+  ::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+  }
+
+  .time-input-custom::-webkit-calendar-picker-indicator {
+    display: none;
+    -webkit-appearance: none;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-surface-3 border border-border rounded-xl;
+  }
+
+  .card-hover {
+    @apply card transition-all duration-200 hover:border-border-light hover:bg-surface-4;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover text-surface-0 text-sm font-semibold rounded-lg transition-colors duration-150 shadow-sm shadow-accent/20;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 text-sm text-slate-400 hover:text-slate-200 hover:bg-surface-4 rounded-lg transition-colors duration-150;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full border whitespace-nowrap shrink-0;
+  }
+
+  .input {
+    @apply bg-surface-2 border border-border rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 transition-colors;
+  }
+}
+
+@layer utilities {}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

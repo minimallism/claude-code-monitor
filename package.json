@@ -1,0 +1,46 @@
+{
+  "name": "@minimallism/claude-code-monitor",
+  "version": "1.0.0",
+  "description": "Real-time monitor for Claude Code agent activity",
+  "type": "commonjs",
+  "main": "server/index.js",
+  "bin": {
+    "claude-code-monitor": "bin/claude-code-monitor.js"
+  },
+  "files": [
+    "bin",
+    "server",
+    "scripts",
+    "client/dist",
+    "data"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "setup": "npm install && cd client && npm install",
+    "dev": "node scripts/dev.js",
+    "dev:server": "node --watch server/index.js",
+    "dev:client": "cd client && npm run dev",
+    "build": "cd client && npm run build",
+    "prepublishOnly": "npm run build",
+    "start": "node server/index.js",
+    "update:pull-setup": "git pull --ff-only && npm run setup",
+    "install-hooks": "node scripts/install-hooks.js",
+    "import-history": "node scripts/import-history.js",
+    "reconcile-tokens": "node scripts/import-history.js --reconcile-tokens",
+    "clear-data": "node scripts/clear-data.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "uuid": "^11.1.0"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.7.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

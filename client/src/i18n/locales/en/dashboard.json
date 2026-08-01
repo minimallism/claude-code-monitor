@@ -1,0 +1,20 @@
+{
+  "title": "Home",
+  "subtitle": "Dashboard",
+  "totalSessions": "Total Sessions",
+  "todaySessions": "Today's Sessions",
+  "totalTokensTrend": "{{today}} today",
+  "activeSessions": "Active Sessions",
+  "activeSessionsTrend": "{{running}} working · {{waiting}} waiting",
+  "totalAgents": "Total Agents",
+  "activeAgents": "Running Agents",
+  "activeAgentsTrend": "{{working}} working · {{waiting}} waiting",
+  "totalProjects": "Total Projects",
+  "totalTokens": "Total Tokens",
+  "cacheHitRate": "Cache Hit Rate",
+  "activeAgentsSection": "Agent List",
+  "noAgents": "No active agents",
+  "noAgentsDesc": "Agents will appear here when a Claude Code session is running.",
+  "failedConnect": "Failed to connect to server",
+  "failedLoad": "Failed to load data"
+}

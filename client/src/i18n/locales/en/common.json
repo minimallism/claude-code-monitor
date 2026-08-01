@@ -1,0 +1,54 @@
+{
+  "refresh": "Refresh",
+  "retry": "Retry",
+  "confirm": "Confirm",
+  "cancel": "Cancel",
+  "loading": "Loading...",
+  "noData": "No data",
+  "total": "Total",
+  "active": "active",
+  "idle": "idle",
+  "total_lower": "total",
+  "subagent": "subagent",
+  "subagents": "subagents",
+  "subagent_label_one": "{{count}} subagent",
+  "subagent_label_other": "{{count}} subagents",
+  "sessions": "sessions",
+  "sessionLabel": "Sessions",
+  "diskUsage": "Disk usage",
+  "lastActivity": "Latest activity",
+  "agents": "agents",
+  "agent": "agent",
+  "live": "Live",
+  "offline": "Offline",
+  "running": "running",
+  "days": "days",
+  "hours": "hours",
+  "ran": "ran",
+  "turnSummary_one": "{{count}} turn",
+  "turnSummary_other": "{{count}} turns",
+  "status": {
+    "working": "Working",
+    "waiting": "Waiting",
+    "completed": "Completed",
+    "error": "Error",
+    "active": "Active"
+  },
+  "time": {
+    "justNow": "just now",
+    "mAgo": "{{count}}m ago",
+    "hAgo": "{{count}}h ago",
+    "dAgo": "{{count}}d ago"
+  },
+  "pagination": {
+    "previous": "Previous",
+    "next": "Next",
+    "showing": "Showing {{from}}-{{to}} of {{total}}"
+  },
+  "token": {
+    "input": "Input",
+    "output": "Output",
+    "cacheRead": "Cache Read",
+    "cacheWrite": "Cache Write"
+  }
+}

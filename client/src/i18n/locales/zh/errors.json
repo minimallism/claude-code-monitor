@@ -1,0 +1,9 @@
+{
+  "notFound": {
+    "code": "404",
+    "title": "页面未找到",
+    "description": "您请求的路由不存在。请使用导航返回有效页面。",
+    "goDashboard": "返回仪表盘",
+    "goBack": "返回上一页"
+  }
+}

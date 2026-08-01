@@ -1,0 +1,62 @@
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { useCallback, useEffect } from "react";
+import { useTranslation } from "react-i18next";
+import { Layout } from "./components/Layout";
+import { SplashScreen } from "./components/SplashScreen";
+import { Home } from "./pages/Home";
+import { Sessions } from "./pages/Sessions";
+import { SessionDetail } from "./pages/SessionDetail";
+import { Analytics } from "./pages/Analytics";
+import { Data } from "./pages/Data";
+import { Settings } from "./pages/Settings";
+import { NotFound } from "./pages/NotFound";
+import { useSSE } from "./hooks/useSSE";
+import { eventBus } from "./lib/eventBus";
+import type { WSMessage } from "./lib/types";
+
+const TITLE_KEYS: Record<string, string> = {
+  "/": "nav:dashboard",
+  "/sessions": "nav:sessions",
+  "/analytics": "nav:analytics",
+  "/settings": "nav:settings",
+  "/data": "nav:data",
+};
+
+function TitleUpdater() {
+  const { t } = useTranslation("nav");
+  const location = useLocation();
+  useEffect(() => {
+    const key = Object.entries(TITLE_KEYS).find(([path]) =>
+      location.pathname === path || location.pathname.startsWith(path + "/")
+    )?.[1];
+    document.title = key ? t(key) : t("dashboard");
+  }, [location, t]);
+  return null;
+}
+
+export default function App() {
+  const onMessage = useCallback((message: WSMessage) => {
+    eventBus.publish(message);
+  }, []);
+
+  useSSE(onMessage);
+  return (
+    <>
+      <SplashScreen />
+      <BrowserRouter>
+        <TitleUpdater />
+        <Routes>
+          <Route element={<Layout />}>
+            <Route index element={<Home />} />
+            <Route path="sessions" element={<Sessions />} />
+            <Route path="sessions/:id" element={<SessionDetail />} />
+            <Route path="analytics" element={<Analytics />} />
+            <Route path="data" element={<Data />} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="*" element={<NotFound />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </>
+  );
+}

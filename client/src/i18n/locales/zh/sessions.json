@@ -1,0 +1,47 @@
+{
+  "title": "会话",
+  "subtitle": "会话列表",
+  "searchPlaceholder": "搜索名称或目录...",
+  "filterAll": "全部",
+  "filterActive": "活跃",
+  "filterWaiting": "等待中",
+  "filterCompleted": "已完成",
+  "filterError": "错误",
+
+  "sessionCount": "已记录 {{count}} 个会话",
+  "sessionCount_plural": "已记录 {{count}} 个会话",
+  "noSessions": "未找到会话",
+  "noSessionsDesc": "请尝试调整搜索条件或筛选器。",
+  "noSessionsHint": "启动一个安装了 hooks 的 Claude Code 会话以开始追踪。",
+  "tableSession": "会话",
+  "tableStatus": "状态",
+  "tableLastActive": "最后活跃",
+  "tableDuration": "持续时间",
+  "tableTurns": "轮次",
+  "tableCost": "Token数",
+  "tableDirectory": "目录",
+  "defaultName": "会话 ",
+  "detail": {
+    "failedLoad": "会话加载失败",
+    "loading": "正在加载会话...",
+    "notFound": "未找到会话",
+    "backToSessions": "返回会话列表",
+    "agents": "Agent",
+    "noAgents": "暂无Agent记录。",
+    "unparented": "独立Subagent"
+  },
+  "overview": {
+    "tokenFlow": "Token 消耗",
+    "toolCalls": "工具调用",
+    "total": "合计",
+    "success": "成功",
+    "failed": "失败",
+    "blocked": "被阻止",
+    "running": "运行中",
+    "noToolCalls": "暂无工具调用",
+    "cacheRead": "缓存读取",
+    "cacheWrite": "缓存写入",
+    "input": "输入",
+    "output": "输出"
+  }
+}

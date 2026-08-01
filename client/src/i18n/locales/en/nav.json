@@ -1,0 +1,24 @@
+{
+  "brand": "Claude Code Monitor",
+  "brandSub": "",
+  "dashboard": "Home",
+  "sessions": "Sessions",
+  "analytics": "Analytics",
+  "data": "Data",
+  "settings": "Settings",
+  "language": "Language",
+  "expand": "Expand sidebar",
+  "collapse": "Collapse sidebar",
+  "collapseShort": "Collapse",
+  "scrollUp": "Scroll navigation up",
+  "scrollDown": "Scroll navigation down",
+  "switchLanguage": "Switch to {{language}}",
+  "languageNames": {
+    "en": "English",
+    "zh": "Chinese"
+  },
+  "languageShort": {
+    "en": "EN",
+    "zh": "中文"
+  }
+}

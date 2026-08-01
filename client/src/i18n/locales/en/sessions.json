@@ -1,0 +1,47 @@
+{
+  "title": "Sessions",
+  "subtitle": "Session list",
+  "searchPlaceholder": "Search by name or directory...",
+  "filterAll": "All",
+  "filterActive": "Active",
+  "filterWaiting": "Waiting",
+  "filterCompleted": "Completed",
+  "filterError": "Error",
+
+  "sessionCount": "{{count}} session recorded",
+  "sessionCount_plural": "{{count}} sessions recorded",
+  "noSessions": "No sessions found",
+  "noSessionsDesc": "Try adjusting your search or filters.",
+  "noSessionsHint": "Start a Claude Code session with hooks installed to begin tracking.",
+  "tableSession": "Session",
+  "tableStatus": "Status",
+  "tableLastActive": "Last Active",
+  "tableDuration": "Duration",
+  "tableTurns": "Turns",
+  "tableCost": "Tokens",
+  "tableDirectory": "Directory",
+  "defaultName": "Session ",
+  "detail": {
+    "failedLoad": "Failed to load session",
+    "loading": "Loading session...",
+    "notFound": "Session not found",
+    "backToSessions": "Back to sessions",
+    "agents": "Agents",
+    "noAgents": "No agents recorded.",
+    "unparented": "Unparented Subagents"
+  },
+  "overview": {
+    "tokenFlow": "Token Flow",
+    "toolCalls": "Tool Calls",
+    "total": "Total",
+    "success": "Success",
+    "failed": "Failed",
+    "blocked": "Blocked",
+    "running": "Running",
+    "noToolCalls": "No tool calls yet.",
+    "cacheRead": "Cache Read",
+    "cacheWrite": "Cache Write",
+    "input": "Input",
+    "output": "Output"
+  }
+}

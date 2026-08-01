@@ -1,0 +1,9 @@
+{
+  "notFound": {
+    "code": "404",
+    "title": "Page not found",
+    "description": "The route you requested does not exist. Use navigation to return to a valid page.",
+    "goDashboard": "Go to Dashboard",
+    "goBack": "Go Back"
+  }
+}

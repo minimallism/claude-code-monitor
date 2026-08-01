@@ -1,0 +1,27 @@
+{
+  "title": "设置",
+  "subtitle": "系统信息 / 钩子管理 / 进程监控",
+  "uptime": "运行时间",
+  "memory": "内存",
+  "dbSize": "数据库大小",
+  "processList": "Claude 进程列表",
+  "processCount": "个进程",
+  "noProcesses": "暂无运行中的 Claude 进程",
+  "loading": "加载中...",
+  "pid": "PID",
+  "user": "用户",
+  "state": "状态",
+  "cpu": "CPU",
+  "processMemory": "物理内存",
+  "cwd": "工作目录",
+  "command": "命令",
+  "action": "操作",
+  "kill": {
+    "title": "终止进程",
+    "confirmTitle": "确认终止进程",
+    "confirmMessage": "确定要终止 PID {{pid}} 的 Claude 进程吗？\n工作目录：{{cwd}}\n这会强制结束该进程，可能导致对应会话数据丢失。",
+    "confirm": "终止",
+    "cancel": "取消",
+    "success": "进程 {{pid}} 已终止"
+  }
+}

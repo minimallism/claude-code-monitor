@@ -1,0 +1,20 @@
+{
+  "title": "首页",
+  "subtitle": "实时看板",
+  "totalSessions": "总会话数",
+  "todaySessions": "今日会话",
+  "totalTokensTrend": "今日 {{today}}",
+  "activeSessions": "活跃会话",
+  "activeSessionsTrend": "{{running}} 工作中 · {{waiting}} 等待",
+  "totalAgents": "总Agent数",
+  "activeAgents": "运行中 Agent",
+  "activeAgentsTrend": "{{working}} 工作中 · {{waiting}} 等待",
+  "totalProjects": "总项目数",
+  "totalTokens": "总 Token 数",
+  "cacheHitRate": "缓存命中率",
+  "activeAgentsSection": "Agent 列表",
+  "noAgents": "暂无活跃Agent",
+  "noAgentsDesc": "当 Claude Code 会话运行时，Agent将显示在此处。",
+  "failedConnect": "无法连接到服务器",
+  "failedLoad": "数据加载失败"
+}
