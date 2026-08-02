@@ -78,11 +78,8 @@ async function parseSessionFile(filePath) {
   const assistantMessageTimestamps = [];
   const assistantToolUses = [];
   const turnDurationRecords = [];
-  let entrypoint = null;
-  let thinkingBlockCount = 0;
   const toolResultErrors = [];
   const toolResultById = new Map();
-  const usageMetadata = { service_tiers: new Set(), speeds: new Set(), inference_geos: new Set() };
 
   // 标题相关：custom-title / ai-title 条目优先级最高；否则用第一条用户消息。
   let customTitle = null;
@@ -121,7 +118,6 @@ async function parseSessionFile(filePath) {
     // 首次出现的上下文字段生效；后续重复条目被忽略。
     if (!cwd && entry.cwd) cwd = entry.cwd;
     if (!slug && entry.slug) slug = entry.slug;
-    if (!entrypoint && entry.entrypoint) entrypoint = entry.entrypoint;
 
     // 时间戳可能是 Unix 毫秒数或 ISO 字符串；统一转换为 ISO 字符串后比较。
     const ts = entry.timestamp;
@@ -203,13 +199,6 @@ async function parseSessionFile(filePath) {
         accumulateBucket(tokensByModel[key], extractUsageFields(usage));
       }
 
-      if (message.usage) {
-        if (message.usage.service_tier) usageMetadata.service_tiers.add(message.usage.service_tier);
-        if (message.usage.speed) usageMetadata.speeds.add(message.usage.speed);
-        if (message.usage.inference_geo && message.usage.inference_geo !== "not_available")
-          usageMetadata.inference_geos.add(message.usage.inference_geo);
-      }
-
       // 收集 assistant 发起的 tool_use，后续生成 PreToolUse/PostToolUse 事件。
       const content = message.content || [];
       if (Array.isArray(content)) {
@@ -222,7 +211,6 @@ async function parseSessionFile(filePath) {
               input: block.input || null,
             });
           }
-          if (block.type === "thinking") thinkingBlockCount++;
         }
       }
     }
@@ -260,22 +248,13 @@ async function parseSessionFile(filePath) {
     startedAt: firstTimestamp,
     endedAt: lastTimestamp,
     teams: [...teams],
-    userMessages: userMessageCount,
-    assistantMessages: assistantMessageCount,
     tokensByModel,
     assistantMessageTimestamps,
     assistantToolUses,
     toolResultById,
     fileModifiedAt,
     turnDurationRecords,
-    entrypoint,
-    thinkingBlockCount,
     toolResultErrors,
-    usageMetadata: {
-      service_tiers: [...usageMetadata.service_tiers],
-      speeds: [...usageMetadata.speeds],
-      inference_geos: [...usageMetadata.inference_geos],
-    },
   };
 }
 
@@ -301,11 +280,8 @@ async function parseSubagentFile(filePath) {
   let agentType = null;
   let firstTimestamp = null;
   let lastTimestamp = null;
-  let userMessageCount = 0;
-  let assistantMessageCount = 0;
   const tokensByModel = {};
   const toolNames = new Set();
-  let thinkingBlockCount = 0;
 
   // 子 agent 的工具调用与结果配对。
   const subagentToolCalls = [];
@@ -337,7 +313,6 @@ async function parseSubagentFile(filePath) {
     }
 
     if (entry.type === "user") {
-      userMessageCount++;
       const messageContent = entry.message?.content;
       // 用第一条用户文本作为子 agent 的 task 描述。
       if (!task) {
@@ -362,7 +337,6 @@ async function parseSubagentFile(filePath) {
     }
 
     if (entry.type === "assistant") {
-      assistantMessageCount++;
       const message = entry.message || {};
       const messageModel = message.model || null;
       if (!model && messageModel && messageModel !== "<synthetic>") model = messageModel;
@@ -398,7 +372,6 @@ async function parseSubagentFile(filePath) {
               });
             }
           }
-          if (block.type === "thinking") thinkingBlockCount++;
         }
       }
     }
@@ -438,11 +411,8 @@ async function parseSubagentFile(filePath) {
     model,
     startedAt: firstTimestamp,
     endedAt: lastTimestamp,
-    userMessages: userMessageCount,
-    assistantMessages: assistantMessageCount,
     tokensByModel,
     toolNames: [...toolNames],
-    thinkingBlockCount,
     normalizedToolEvents,
     spawnedChildAgentIds: [...spawnedChildAgentIds],
   };
@@ -963,18 +933,10 @@ function importSession(dbModule, session) {
       if (added > 0) wasModified = true;
     }
 
-    // 当消息数、入口点、轮次、thinking 块等元数据发生变化时更新 sessions.metadata。
+    // 当轮次元数据发生变化时更新 sessions.metadata。
     const metaChanged =
-      existingMetadata.user_messages !== session.userMessages ||
-      existingMetadata.assistant_messages !== session.assistantMessages ||
-      (!existingMetadata.entrypoint && (session.entrypoint || session.turnDurationRecords?.length > 0)) ||
-      (session.turnDurationRecords && (existingMetadata.turn_count || 0) !== session.turnDurationRecords.length) ||
-      (session.thinkingBlockCount || 0) > (existingMetadata.thinking_blocks || 0);
+      session.turnDurationRecords && (existingMetadata.turn_count || 0) !== session.turnDurationRecords.length;
     if (metaChanged) {
-      existingMetadata.user_messages = session.userMessages;
-      existingMetadata.assistant_messages = session.assistantMessages;
-      existingMetadata.entrypoint = existingMetadata.entrypoint || session.entrypoint || null;
-      existingMetadata.thinking_blocks = Math.max(existingMetadata.thinking_blocks || 0, session.thinkingBlockCount || 0);
       existingMetadata.turn_count = session.turnDurationRecords ? session.turnDurationRecords.length : existingMetadata.turn_count || 0;
       stmts.updateSession.run(null, null, null, JSON.stringify(existingMetadata), session.sessionId);
       wasModified = true;
@@ -1077,12 +1039,7 @@ function importSession(dbModule, session) {
   const agentStatus = isRecentlyActive ? "waiting" : "completed";
 
   const metadata = JSON.stringify({
-    slug: session.slug,
-    user_messages: session.userMessages,
-    assistant_messages: session.assistantMessages,
     imported: true,
-    entrypoint: session.entrypoint || null,
-    thinking_blocks: session.thinkingBlockCount || 0,
     turn_count: session.turnDurationRecords ? session.turnDurationRecords.length : 0,
   });
 
@@ -1607,7 +1564,7 @@ if (require.main === module) {
               0
             );
             console.log(
-              `  ${session.sessionId.slice(0, 12)}... | ${session.name.slice(0, 40).padEnd(40)} | msgs: ${session.userMessages}/${session.assistantMessages} | teams: ${session.teams.length} | models: ${[...new Set(Object.values(session.tokensByModel).map((tokenBucket) => tokenBucket.model))].join(",")} | tokens: ${totalTokens}`
+              `  ${session.sessionId.slice(0, 12)}... | ${session.name.slice(0, 40).padEnd(40)} | teams: ${session.teams.length} | models: ${[...new Set(Object.values(session.tokensByModel).map((tokenBucket) => tokenBucket.model))].join(",")} | tokens: ${totalTokens}`
             );
           } catch (err) {
             console.error(`  ERROR ${file}: ${err.message}`);

@@ -604,17 +604,12 @@ const processEvent = db.transaction((hookType, data) => {
         }
       }
 
-      // 把思考块数量和轮次信息写入 session.metadata。
-      if (result.thinkingBlockCount > 0 || result.turnDurations) {
+      // 把轮次信息写入 session.metadata。
+      if (result.turnDurations) {
         const session = stmts.getSession.get(sessionId);
         if (session) {
           const meta = session.metadata ? JSON.parse(session.metadata) : {};
-          if (result.thinkingBlockCount > 0) {
-            meta.thinking_blocks = (meta.thinking_blocks || 0) + result.thinkingBlockCount;
-          }
-          if (result.turnDurations) {
-            meta.turn_count = (meta.turn_count || 0) + result.turnDurations.length;
-          }
+          meta.turn_count = (meta.turn_count || 0) + result.turnDurations.length;
           stmts.updateSession.run(null, null, null, JSON.stringify(meta), sessionId);
         }
       }

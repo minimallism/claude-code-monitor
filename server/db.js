@@ -173,6 +173,34 @@ db.prepare(
   if (cleaned > 0) console.log(`Cleaned deprecated agent metadata fields from ${cleaned} agents`);
 })();
 
+// 清理 sessions.metadata 中已废弃的字段
+(function cleanDeprecatedSessionMetadata() {
+  const sessions = db.prepare("SELECT id, metadata FROM sessions WHERE metadata IS NOT NULL").all();
+  const update = db.prepare("UPDATE sessions SET metadata = ? WHERE id = ?");
+  const removeKeys = ["slug", "user_messages", "assistant_messages", "entrypoint", "thinking_blocks"];
+  let cleaned = 0;
+  const tx = db.transaction(() => {
+    for (const row of sessions) {
+      try {
+        const meta = JSON.parse(row.metadata);
+        let changed = false;
+        for (const key of removeKeys) {
+          if (key in meta) {
+            delete meta[key];
+            changed = true;
+          }
+        }
+        if (changed) {
+          update.run(JSON.stringify(meta), row.id);
+          cleaned++;
+        }
+      } catch {}
+    }
+  });
+  tx();
+  if (cleaned > 0) console.log(`Cleaned deprecated session metadata fields from ${cleaned} sessions`);
+})();
+
 const stmts = {
   getSession: db.prepare("SELECT * FROM sessions WHERE id = ?"),
   insertSession: db.prepare(
