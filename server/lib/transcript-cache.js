@@ -138,17 +138,11 @@ class TranscriptCache {
           const mergedResult = this._merge(cachedEntry, incrementalResult);
           const hasTokens = Object.keys(mergedResult.tokensByModel).length > 0;
           const hasTurnDurations = mergedResult.turnDurations && mergedResult.turnDurations.length > 0;
-          const hasUsageExtras =
-            mergedResult.usageExtras &&
-            (mergedResult.usageExtras.service_tiers.length > 0 ||
-              mergedResult.usageExtras.speeds.length > 0 ||
-              mergedResult.usageExtras.inference_geos.length > 0);
           // 把合并结果里的空集合/空数组规范化为 null，减少返回体大小。
           const result = {
             tokensByModel: hasTokens ? mergedResult.tokensByModel : null,
             turnDurations: hasTurnDurations ? mergedResult.turnDurations : null,
             thinkingBlockCount: mergedResult.thinkingBlockCount || 0,
-            usageExtras: hasUsageExtras ? mergedResult.usageExtras : null,
             latestModel: mergedResult.latestModel || null,
             customTitle: mergedResult.customTitle || null,
             aiTitle: mergedResult.aiTitle || null,
@@ -162,7 +156,6 @@ class TranscriptCache {
             !result.tokensByModel &&
             !result.turnDurations &&
             !result.thinkingBlockCount &&
-            !result.usageExtras &&
             !result.latestModel &&
             !result.customTitle &&
             !result.aiTitle &&
@@ -330,11 +323,6 @@ class TranscriptCache {
       tokensByModel: {},
       turnDurations: [],
       thinkingBlockCount: 0,
-      usageExtras: {
-        service_tiers: new Set(),
-        speeds: new Set(),
-        inference_geos: new Set(),
-      },
       // 最后一条 assistant 消息使用的模型。
       latestModel: null,
       // 用户自定义标题 / AI 生成标题。
@@ -427,13 +415,6 @@ class TranscriptCache {
     }
     accumulateBucket(state.tokensByModel[key], extractUsageFields(message.usage));
 
-    // 收集 usage 附加维度，用于展示/分析。
-    if (message.usage.service_tier) state.usageExtras.service_tiers.add(message.usage.service_tier);
-    if (message.usage.speed) state.usageExtras.speeds.add(message.usage.speed);
-    if (message.usage.inference_geo && message.usage.inference_geo !== "not_available") {
-      state.usageExtras.inference_geos.add(message.usage.inference_geo);
-    }
-
     // 统计 thinking 块数量。
     const messageContent = message.content || [];
     if (Array.isArray(messageContent)) {
@@ -450,15 +431,10 @@ class TranscriptCache {
   _finalizeState(state) {
     const hasTokens = Object.keys(state.tokensByModel).length > 0;
     const hasTurnDurations = state.turnDurations.length > 0;
-    const hasUsageExtras =
-      state.usageExtras.service_tiers.size > 0 ||
-      state.usageExtras.speeds.size > 0 ||
-      state.usageExtras.inference_geos.size > 0;
     if (
       !hasTokens &&
       !hasTurnDurations &&
       !state.thinkingBlockCount &&
-      !hasUsageExtras &&
       !state.latestModel &&
       !state.customTitle &&
       !state.aiTitle &&
@@ -471,20 +447,10 @@ class TranscriptCache {
 
     this._trimArray(state.turnDurations);
 
-    // Set 无法直接 JSON 序列化，转为数组并限制长度。
-    const serializedUsageExtras = hasUsageExtras
-      ? {
-          service_tiers: this._capArrayFromSet(state.usageExtras.service_tiers),
-          speeds: this._capArrayFromSet(state.usageExtras.speeds),
-          inference_geos: this._capArrayFromSet(state.usageExtras.inference_geos),
-        }
-      : null;
-
     return {
       tokensByModel: hasTokens ? state.tokensByModel : null,
       turnDurations: hasTurnDurations ? state.turnDurations : null,
       thinkingBlockCount: state.thinkingBlockCount,
-      usageExtras: serializedUsageExtras,
       latestModel: state.latestModel,
       customTitle: state.customTitle,
       aiTitle: state.aiTitle,
@@ -522,33 +488,6 @@ class TranscriptCache {
     const thinkingBlockCount =
       (cachedEntry.result?.thinkingBlockCount || 0) + (incrementalResult?.thinkingBlockCount || 0);
 
-    let usageExtras = cachedEntry.result?.usageExtras
-      ? this._cloneUsageExtras(cachedEntry.result.usageExtras)
-      : null;
-    if (incrementalResult && incrementalResult.usageExtras) {
-      if (!usageExtras) {
-        usageExtras = { service_tiers: [], speeds: [], inference_geos: [] };
-      }
-
-      // 把缓存中的 usageExtras 数组和增量结果合并为 Set 去重，再转回数组。
-      const mergedUsageSets = {
-        service_tiers: new Set([
-          ...usageExtras.service_tiers,
-          ...incrementalResult.usageExtras.service_tiers,
-        ]),
-        speeds: new Set([...usageExtras.speeds, ...incrementalResult.usageExtras.speeds]),
-        inference_geos: new Set([
-          ...usageExtras.inference_geos,
-          ...incrementalResult.usageExtras.inference_geos,
-        ]),
-      };
-      usageExtras = {
-        service_tiers: this._capArrayFromSet(mergedUsageSets.service_tiers),
-        speeds: this._capArrayFromSet(mergedUsageSets.speeds),
-        inference_geos: this._capArrayFromSet(mergedUsageSets.inference_geos),
-      };
-    }
-
     // 最新模型、标题：增量结果优先（因为时间在后面）。
     const latestModel =
       (incrementalResult && incrementalResult.latestModel) || cachedEntry.result?.latestModel || null;
@@ -569,7 +508,6 @@ class TranscriptCache {
       tokensByModel,
       turnDurations,
       thinkingBlockCount,
-      usageExtras,
       latestModel,
       customTitle,
       aiTitle,
@@ -586,15 +524,6 @@ class TranscriptCache {
       clone[model] = { ...tokenBucket };
     }
     return clone;
-  }
-
-  _cloneUsageExtras(usageExtras) {
-    if (!usageExtras) return null;
-    return {
-      service_tiers: [...(usageExtras.service_tiers || [])],
-      speeds: [...(usageExtras.speeds || [])],
-      inference_geos: [...(usageExtras.inference_geos || [])],
-    };
   }
 
   /**
@@ -617,15 +546,6 @@ class TranscriptCache {
   _trimArray(array, maxLength = MAX_ARRAY_LEN) {
     if (!array || !Array.isArray(array) || array.length <= maxLength) return;
     array.splice(0, array.length - maxLength);
-  }
-
-  /**
-   * 把 Set 转为数组并限制长度，用于 usageExtras 的序列化。
-   */
-  _capArrayFromSet(set) {
-    const array = [...set];
-    this._trimArray(array);
-    return array;
   }
 
   /** 当前缓存条目数。 */

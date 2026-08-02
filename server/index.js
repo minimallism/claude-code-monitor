@@ -216,24 +216,6 @@ function startBackgroundServices() {
     if (postImportTimer.unref) postImportTimer.unref();
   }
 
-  // 延迟回填子 agent 的 per-agent token 元数据，避免启动时阻塞。
-  {
-    const dbModule = require("./db");
-    const { backfillSubagentTokenMetadata } = require("../scripts/import-history");
-    const backfillTimer = setTimeout(() => {
-      Promise.resolve()
-        .then(() => backfillSubagentTokenMetadata(dbModule))
-        .then((backfillResult) => {
-          if (backfillResult && backfillResult.stamped > 0)
-            console.log(
-              `Backfilled per-agent token cost for ${backfillResult.stamped} subagent(s) across ${backfillResult.sessions} session(s)`
-            );
-        })
-        .catch((error) => console.warn("subagent token backfill failed:", error?.message || error));
-    }, 500);
-    if (backfillTimer.unref) backfillTimer.unref();
-  }
-
   // 启动文件系统监听 + 轮询，保持数据库与 ~/.claude/projects 下的 JSONL 同步。
   try {
     startSessionSync(broadcast);

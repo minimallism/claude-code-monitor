@@ -604,23 +604,16 @@ const processEvent = db.transaction((hookType, data) => {
         }
       }
 
-      // 把 usage 附加信息（service_tier/speed/geo）和思考块数量等写入 session.metadata。
-      if (result.usageExtras || result.thinkingBlockCount > 0) {
+      // 把思考块数量和轮次信息写入 session.metadata。
+      if (result.thinkingBlockCount > 0 || result.turnDurations) {
         const session = stmts.getSession.get(sessionId);
         if (session) {
           const meta = session.metadata ? JSON.parse(session.metadata) : {};
-          if (result.usageExtras) {
-            meta.usage_extras = result.usageExtras;
-          }
           if (result.thinkingBlockCount > 0) {
             meta.thinking_blocks = (meta.thinking_blocks || 0) + result.thinkingBlockCount;
           }
-          // turnDurations 来自转录本中的 subtype=turn_duration 系统事件，
-          // 累加后得到总会话轮数和总耗时。
           if (result.turnDurations) {
             meta.turn_count = (meta.turn_count || 0) + result.turnDurations.length;
-            const totalMs = result.turnDurations.reduce((s, t) => s + t.durationMs, 0);
-            meta.total_turn_duration_ms = (meta.total_turn_duration_ms || 0) + totalMs;
           }
           stmts.updateSession.run(null, null, null, JSON.stringify(meta), sessionId);
         }

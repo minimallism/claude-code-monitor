@@ -50,7 +50,7 @@ function firstUserLabel(text) {
  *
  * 该函数逐行读取 JSONL，避免一次性加载大文件；返回的对象会被后续
  * importSession 写入数据库。关键字段：
- * - cwd / slug / gitBranch / model / version：会话上下文信息。
+ * - cwd / slug / model：会话上下文信息。
  * - tokensByModel：按模型/速度/地区/服务层级聚合的 token 用量。
  * - assistantToolUses / toolResultById：工具调用与结果，用于生成 events。
  * - parsedSubagents：由 parseSessionForImport 填充的子 agent 数据。
@@ -66,9 +66,7 @@ async function parseSessionFile(filePath) {
   // 会话上下文字段：按 JSONL 中首次出现的值为准，后续重复出现被忽略。
   let cwd = null;
   let model = null;
-  let version = null;
   let slug = null;
-  let gitBranch = null;
   let firstTimestamp = null;
   let lastTimestamp = null;
   const teams = new Set();
@@ -81,7 +79,6 @@ async function parseSessionFile(filePath) {
   const assistantToolUses = [];
   const turnDurationRecords = [];
   let entrypoint = null;
-  let permissionMode = null;
   let thinkingBlockCount = 0;
   const toolResultErrors = [];
   const toolResultById = new Map();
@@ -124,10 +121,7 @@ async function parseSessionFile(filePath) {
     // 首次出现的上下文字段生效；后续重复条目被忽略。
     if (!cwd && entry.cwd) cwd = entry.cwd;
     if (!slug && entry.slug) slug = entry.slug;
-    if (!gitBranch && entry.gitBranch) gitBranch = entry.gitBranch;
-    if (!version && entry.version) version = entry.version;
     if (!entrypoint && entry.entrypoint) entrypoint = entry.entrypoint;
-    if (!permissionMode && entry.permissionMode) permissionMode = entry.permissionMode;
 
     // 时间戳可能是 Unix 毫秒数或 ISO 字符串；统一转换为 ISO 字符串后比较。
     const ts = entry.timestamp;
@@ -261,13 +255,7 @@ async function parseSessionFile(filePath) {
     firstUserMessage,
     cwd,
     model,
-    version,
     slug,
-    gitBranch,
-    
-    
-    
-    
     transcriptPath: filePath,
     startedAt: firstTimestamp,
     endedAt: lastTimestamp,
@@ -281,7 +269,6 @@ async function parseSessionFile(filePath) {
     fileModifiedAt,
     turnDurationRecords,
     entrypoint,
-    permissionMode,
     thinkingBlockCount,
     toolResultErrors,
     usageMetadata: {
@@ -609,35 +596,6 @@ function writeSessionTokens(dbModule, sessionId, tokensByModel) {
 }
 
 /**
- * 把 token 桶转换为写入 agents.metadata.tokens 的数组行。
- * 保留 speed / geo / tier 等细粒度信息，供前端展示。
- */
-function subagentTokenRows(tokensByModel) {
-  const rows = [];
-  for (const tokenBucket of Object.values(tokensByModel || {})) {
-    if (!tokenBucket || !tokenBucket.model) continue;
-    const row = {
-      model: tokenBucket.model,
-      speed: tokenBucket.speed,
-      inference_geo: tokenBucket.geo,
-      service_tier: tokenBucket.tier,
-      input_tokens: tokenBucket.input || 0,
-      output_tokens: tokenBucket.output || 0,
-      cache_read_tokens: tokenBucket.cacheRead || 0,
-      cache_write_tokens: tokenBucket.cacheWrite || 0,
-      cache_write_1h_tokens: tokenBucket.cacheWrite1h || 0,
-    };
-    const hasUsage =
-      row.input_tokens ||
-      row.output_tokens ||
-      row.cache_read_tokens ||
-      row.cache_write_tokens;
-    if (hasUsage) rows.push(row);
-  }
-  return rows;
-}
-
-/**
  * 把 JSONL 解析出的子 agent 导入数据库。
  *
  * 关键概念：
@@ -659,8 +617,6 @@ function importSubagentFromJsonl(dbModule, sessionId, mainAgentId, subagentData)
 
   const subName = subagentData.agentType ? subagentData.agentType : `Subagent ${subagentData.agentId.slice(0, 8)}`;
 
-  // 细粒度 token 行，用于写入 agents.metadata.tokens。
-  const tokenRows = subagentTokenRows(subagentData.tokensByModel);
   let created = 0;
   let updated = 0;
 
@@ -677,13 +633,7 @@ function importSubagentFromJsonl(dbModule, sessionId, mainAgentId, subagentData)
       mainAgentId,
       JSON.stringify({
         imported: true,
-        source: "jsonl",
         model: subagentData.model,
-        tools: subagentData.toolNames,
-        user_messages: subagentData.userMessages,
-        assistant_messages: subagentData.assistantMessages,
-        thinking_blocks: subagentData.thinkingBlockCount,
-        tokens: tokenRows,
       })
     );
     db.prepare("UPDATE agents SET started_at = ?, ended_at = ?, updated_at = ? WHERE id = ?").run(
@@ -708,35 +658,6 @@ function importSubagentFromJsonl(dbModule, sessionId, mainAgentId, subagentData)
       let changed = false;
       if (subagentData.model && !existingMetadata.model) {
         existingMetadata.model = subagentData.model;
-        changed = true;
-      }
-      
-      
-      
-      
-      
-      if (subagentData.toolNames && subagentData.toolNames.length > 0 && !existingMetadata.tools) {
-        existingMetadata.tools = subagentData.toolNames;
-        changed = true;
-      }
-      if (existingMetadata.user_messages == null && subagentData.userMessages != null) {
-        existingMetadata.user_messages = subagentData.userMessages;
-        changed = true;
-      }
-      if (existingMetadata.assistant_messages == null && subagentData.assistantMessages != null) {
-        existingMetadata.assistant_messages = subagentData.assistantMessages;
-        changed = true;
-      }
-      if (existingMetadata.thinking_blocks == null && subagentData.thinkingBlockCount != null) {
-        existingMetadata.thinking_blocks = subagentData.thinkingBlockCount;
-        changed = true;
-      }
-      // 只有当 tokens 数组真正发生变化时才更新，避免无意义的 metadata 写入。
-      const hasTokensKey = Object.prototype.hasOwnProperty.call(existingMetadata, "tokens");
-      const tokensChanged =
-        tokenRows.length > 0 && JSON.stringify(existingMetadata.tokens || []) !== JSON.stringify(tokenRows);
-      if (tokensChanged || !hasTokensKey) {
-        existingMetadata.tokens = tokenRows;
         changed = true;
       }
       if (changed) {
@@ -1053,13 +974,8 @@ function importSession(dbModule, session) {
       existingMetadata.user_messages = session.userMessages;
       existingMetadata.assistant_messages = session.assistantMessages;
       existingMetadata.entrypoint = existingMetadata.entrypoint || session.entrypoint || null;
-      existingMetadata.permission_mode = existingMetadata.permission_mode || session.permissionMode || null;
       existingMetadata.thinking_blocks = Math.max(existingMetadata.thinking_blocks || 0, session.thinkingBlockCount || 0);
-      existingMetadata.usage_extras = session.usageMetadata || existingMetadata.usage_extras || null;
       existingMetadata.turn_count = session.turnDurationRecords ? session.turnDurationRecords.length : existingMetadata.turn_count || 0;
-      existingMetadata.total_turn_duration_ms = session.turnDurationRecords
-        ? session.turnDurationRecords.reduce((sum, durationRecord) => sum + durationRecord.durationMs, 0)
-        : existingMetadata.total_turn_duration_ms || 0;
       stmts.updateSession.run(null, null, null, JSON.stringify(existingMetadata), session.sessionId);
       wasModified = true;
     }
@@ -1161,20 +1077,13 @@ function importSession(dbModule, session) {
   const agentStatus = isRecentlyActive ? "waiting" : "completed";
 
   const metadata = JSON.stringify({
-    version: session.version,
     slug: session.slug,
-    git_branch: session.gitBranch,
     user_messages: session.userMessages,
     assistant_messages: session.assistantMessages,
     imported: true,
     entrypoint: session.entrypoint || null,
-    permission_mode: session.permissionMode || null,
     thinking_blocks: session.thinkingBlockCount || 0,
-    usage_extras: session.usageMetadata || null,
     turn_count: session.turnDurationRecords ? session.turnDurationRecords.length : 0,
-    total_turn_duration_ms: session.turnDurationRecords
-      ? session.turnDurationRecords.reduce((sum, durationRecord) => sum + durationRecord.durationMs, 0)
-      : 0,
   });
 
   // 先插入会话记录，再用 UPDATE 设置 started_at / ended_at（避免 insertSession 语句参数过多）。
@@ -2011,83 +1920,12 @@ async function scanAndImportSubagents(dbModule, sessionId, transcriptPath, opts 
   return { imported: subFiles.length, created, reparented };
 }
 
-/**
- * 向后兼容：为没有 tokens 元数据的子 agent 补充 token 信息。
- *
- * 查询条件：
- * - agent 类型为 subagent 且不是 compaction 类型。
- * - agent.metadata 中不存在 "tokens" 字段。
- *
- * 通过 transcript_path 或 metadata.slug 定位 JSONL 文件，再调用
- * importSubagentFromJsonl 把细粒度 token 写入 metadata。
- */
-async function backfillSubagentTokenMetadata(dbModule) {
-  const { db } = dbModule;
-  let sessions;
-  try {
-    // 找出所有需要补充 token 元数据的会话（按 session 去重）。
-    sessions = db
-      .prepare(
-        `SELECT DISTINCT s.id AS session_id, s.transcript_path AS tp,
-                s.metadata AS existingMetadata
-         FROM agents a JOIN sessions s ON s.id = a.session_id
-         WHERE a.type = 'subagent'
-           AND (a.subagent_type IS NULL OR a.subagent_type != 'compaction')
-           AND (a.metadata IS NULL OR a.metadata NOT LIKE '%"tokens":%')`
-      )
-      .all();
-  } catch {
-    return { sessions: 0, stamped: 0 };
-  }
-  let stamped = 0;
-  let scanned = 0;
-  for (const sessionRow of sessions) {
-    // 优先使用数据库存储的 transcript_path；如果不存在则通过 slug 推断。
-    let transcriptPath = sessionRow.tp && fs.existsSync(sessionRow.tp) ? sessionRow.tp : null;
-    if (!transcriptPath) {
-      let slug = null;
-      try {
-        slug = sessionRow.existingMetadata ? JSON.parse(sessionRow.existingMetadata).slug : null;
-      } catch {
-        slug = null;
-      }
-      if (slug) {
-        const candidate = path.join(PROJECTS_DIR, slug, `${sessionRow.session_id}.jsonl`);
-        // 只要候选目录存在就尝试使用，即使具体文件尚未写入。
-        if (fs.existsSync(path.dirname(candidate))) transcriptPath = candidate;
-      }
-    }
-    if (!transcriptPath) continue;
-    let subFiles;
-    try {
-      subFiles = findSessionSubagents(transcriptPath);
-    } catch {
-      continue;
-    }
-    if (!subFiles || subFiles.length === 0) continue;
-    scanned++;
-    const mainAgentId = `${sessionRow.session_id}-main`;
-    for (const subagentFile of subFiles) {
-      try {
-        const subagentData = await parseSubagentFile(subagentFile);
-        if (!subagentData) continue;
-        const result = importSubagentFromJsonl(dbModule, sessionRow.session_id, mainAgentId, subagentData);
-        if (result.updated > 0) stamped++;
-      } catch {
-        // 单个子 agent 失败不影响后续填充。
-      }
-    }
-  }
-  return { sessions: scanned, stamped };
-}
-
 module.exports = {
   importAllSessions,
   syncDefaultProjects,
   importFromDirectory,
   importSubagents,
   importSubagentFromJsonl,
-  backfillSubagentTokenMetadata,
   reconcileSubagentParents,
   parseSessionFile,
   parseSubagentFile,

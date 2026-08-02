@@ -145,6 +145,34 @@ db.prepare(
 `
 ).run();
 
+// 清理 agents.metadata 中已废弃的字段
+(function cleanDeprecatedAgentMetadata() {
+  const agents = db.prepare("SELECT id, metadata FROM agents WHERE metadata IS NOT NULL").all();
+  const update = db.prepare("UPDATE agents SET metadata = ? WHERE id = ?");
+  const removeKeys = ["source", "tools", "user_messages", "assistant_messages", "thinking_blocks", "tokens"];
+  let cleaned = 0;
+  const tx = db.transaction(() => {
+    for (const row of agents) {
+      try {
+        const meta = JSON.parse(row.metadata);
+        let changed = false;
+        for (const key of removeKeys) {
+          if (key in meta) {
+            delete meta[key];
+            changed = true;
+          }
+        }
+        if (changed) {
+          update.run(JSON.stringify(meta), row.id);
+          cleaned++;
+        }
+      } catch {}
+    }
+  });
+  tx();
+  if (cleaned > 0) console.log(`Cleaned deprecated agent metadata fields from ${cleaned} agents`);
+})();
+
 const stmts = {
   getSession: db.prepare("SELECT * FROM sessions WHERE id = ?"),
   insertSession: db.prepare(
