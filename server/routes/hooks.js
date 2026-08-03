@@ -23,6 +23,25 @@ const router = Router();
 
 const transcriptCache = new TranscriptCache();
 
+/**
+ * 从 working 子 agent 列表中匹配 SubagentStop 事件对应的 agent。
+ * 优先级：名称前缀 > agent_type > prompt 全文本 > 兜底取第一个。
+ */
+function findMatchingSubagent(subagents, data) {
+  const working = subagents.filter((a) => a.type === "subagent" && a.status === "working");
+  if (!working.length) return null;
+
+  const desc = data.description || data.agent_type || data.subagent_type;
+  const prefix = desc && (desc.length > 57 ? desc.slice(0, 57) : desc);
+
+  return (
+    (prefix && working.find((a) => a.name.startsWith(prefix))) ||
+    (data.agent_type && working.find((a) => a.subagent_type === data.agent_type)) ||
+    (data.prompt && working.find((a) => a.task === data.prompt.slice(0, 500))) ||
+    working[0]
+  );
+}
+
 // 用于识别 Claude Code 推送的系统通知是否表示正在等待用户输入。
 // 匹配 "waiting for your input"、"approval needed"、"permission" 等常见文案。
 const WAITING_INPUT_PATTERN =
@@ -439,42 +458,9 @@ const processEvent = db.transaction((hookType, data) => {
     case "SubagentStop": {
       // 子 agent 完成时，需要把数据库中对应的 working 子 agent 标记为 completed。
       // 但 hook 里通常只包含 description/agent_type/prompt，没有稳定的 agent uuid，
-      // 因此需要多轮启发式匹配。
+      // 因此需要启发式匹配。
       const subagents = stmts.listAgentsBySession.all(sessionId);
-      let matchingSubagent = null;
-
-      // 第一轮：按名称前缀匹配（description/agent_type 通常被用来生成 name）。
-      const subagentDescription = data.description || data.agent_type || data.subagent_type || null;
-      if (subagentDescription) {
-        const namePrefix = subagentDescription.length > 57 ? subagentDescription.slice(0, 57) : subagentDescription;
-        matchingSubagent = subagents.find(
-          (a) => a.type === "subagent" && a.status === "working" && a.name.startsWith(namePrefix)
-        );
-      }
-
-      // 第二轮：按 subagent_type 字段匹配。
-      if (!matchingSubagent && data.agent_type) {
-        matchingSubagent = subagents.find(
-          (a) =>
-            a.type === "subagent" && a.status === "working" && a.subagent_type === data.agent_type
-        );
-      }
-
-      // 第三轮：按任务 prompt 全文本匹配。
-      if (!matchingSubagent) {
-        const prompt = data.prompt ? data.prompt.slice(0, 500) : null;
-        if (prompt) {
-          matchingSubagent = subagents.find(
-            (a) => a.type === "subagent" && a.status === "working" && a.task === prompt
-          );
-        }
-      }
-
-      // 兜底：如果仍找不到，取任意一个处于 working 状态的子 agent。
-      // 这种 best-effort 在并发多个子 agent 同时停止时可能出现归因偏差，但概率较低。
-      if (!matchingSubagent) {
-        matchingSubagent = subagents.find((a) => a.type === "subagent" && a.status === "working");
-      }
+      const matchingSubagent = findMatchingSubagent(subagents, data);
 
       if (matchingSubagent) {
         stmts.updateAgent.run(
