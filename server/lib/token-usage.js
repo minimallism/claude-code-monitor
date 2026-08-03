@@ -1,52 +1,23 @@
-// 使用不可见控制字符作为分桶字段的分隔符，避免 model 名中出现与分隔符冲突的字符。
-const BUCKET_SEP = String.fromCharCode(1);
-
 /**
- * 归一化 speed 字段。Claude Code usage 中可能出现 "fast" 等取值，
- * 非 fast 统一归为 "standard"，便于按相同维度聚合 token。
+ * 根据模型名生成唯一的分桶 key。
+ * 直接用 model 名作为 key，不再区分 speed/geo/tier（数据库不存储这些维度）。
  */
-function normalizeSpeed(usage) {
-  return usage && usage.speed === "fast" ? "fast" : "standard";
-}
-
-/**
- * 归一化 inference_geo 字段。
- * 只有显式为 "us" 时才认为是美国区，否则统一为 "global"，避免细碎地理维度。
- */
-function normalizeGeo(usage) {
-  return usage && usage.inference_geo === "us" ? "us" : "global";
-}
-
-/**
- * 归一化 service_tier 字段。batch 以外的 tier 统一为 "standard"。
- */
-function normalizeTier(usage) {
-  return usage && usage.service_tier === "batch" ? "batch" : "standard";
-}
-
-/**
- * 根据 (model, speed, geo, tier) 生成唯一的分桶 key。
- * 这样同一模型在不同 speed/geo/tier 下的 token 不会相互覆盖。
- */
-function bucketKey(model, speed, geo, tier) {
-  return [model, speed, geo, tier].join(BUCKET_SEP);
+function bucketKey(model) {
+  return model || "unknown";
 }
 
 /**
  * 创建一个空的 token 分桶对象。
  * cacheWrite1h 用于单独统计 1h 缓存写入量（成本结构不同）。
  */
-function emptyBucket(model, speed, geo, tier) {
+function emptyBucket(model) {
   return {
     model,
-    speed,
-    geo,
-    tier,
     input: 0,
     output: 0,
     cacheRead: 0,
-    cacheWrite: 0, 
-    cacheWrite1h: 0, 
+    cacheWrite: 0,
+    cacheWrite1h: 0,
   };
 }
 
@@ -104,10 +75,6 @@ function accumulateBucket(target, source) {
 }
 
 module.exports = {
-  BUCKET_SEP,
-  normalizeSpeed,
-  normalizeGeo,
-  normalizeTier,
   bucketKey,
   emptyBucket,
   extractUsageFields,

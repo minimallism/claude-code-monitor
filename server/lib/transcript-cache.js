@@ -3,9 +3,6 @@ const {
   bucketKey,
   emptyBucket,
   extractUsageFields,
-  normalizeSpeed,
-  normalizeGeo,
-  normalizeTier,
   accumulateBucket,
 } = require("./token-usage");
 
@@ -239,13 +236,10 @@ class TranscriptCache {
     if (!model || model === "<synthetic>" || !message.usage) return;
     state.latestModel = model;
 
-    // 按 (model, speed, geo, tier) 分桶累加 token。
-    const speed = normalizeSpeed(message.usage);
-    const geo = normalizeGeo(message.usage);
-    const tier = normalizeTier(message.usage);
-    const key = bucketKey(model, speed, geo, tier);
+    // 按 model 分桶累加 token。
+    const key = bucketKey(model);
     if (!state.tokensByModel[key]) {
-      state.tokensByModel[key] = emptyBucket(model, speed, geo, tier);
+      state.tokensByModel[key] = emptyBucket(model);
     }
     accumulateBucket(state.tokensByModel[key], extractUsageFields(message.usage));
 

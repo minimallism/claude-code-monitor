@@ -25,9 +25,6 @@ const {
   bucketKey,
   emptyBucket,
   extractUsageFields,
-  normalizeSpeed,
-  normalizeGeo,
-  normalizeTier,
   accumulateBucket,
 } = require("../server/lib/token-usage");
 
@@ -182,19 +179,9 @@ async function parseSessionFile(filePath) {
       // 累积 token 用量，按模型 + speed + geo + tier 分桶。
       if (messageModel && messageModel !== "<synthetic>" && message.usage) {
         const usage = message.usage;
-        const key = bucketKey(
-          messageModel,
-          normalizeSpeed(usage),
-          normalizeGeo(usage),
-          normalizeTier(usage)
-        );
+        const key = bucketKey(messageModel);
         if (tokensByModel[key] === undefined) {
-          tokensByModel[key] = emptyBucket(
-            messageModel,
-            normalizeSpeed(usage),
-            normalizeGeo(usage),
-            normalizeTier(usage)
-          );
+          tokensByModel[key] = emptyBucket(messageModel);
         }
         accumulateBucket(tokensByModel[key], extractUsageFields(usage));
       }
@@ -342,19 +329,9 @@ async function parseSubagentFile(filePath) {
       if (!model && messageModel && messageModel !== "<synthetic>") model = messageModel;
       if (messageModel && messageModel !== "<synthetic>" && message.usage) {
         const usage = message.usage;
-        const key = bucketKey(
-          messageModel,
-          normalizeSpeed(usage),
-          normalizeGeo(usage),
-          normalizeTier(usage)
-        );
+        const key = bucketKey(messageModel);
         if (!tokensByModel[key]) {
-          tokensByModel[key] = emptyBucket(
-            messageModel,
-            normalizeSpeed(usage),
-            normalizeGeo(usage),
-            normalizeTier(usage)
-          );
+          tokensByModel[key] = emptyBucket(messageModel);
         }
         accumulateBucket(tokensByModel[key], extractUsageFields(usage));
       }
