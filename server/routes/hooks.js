@@ -345,7 +345,7 @@ const processEvent = db.transaction((hookType, data) => {
         // 则把当前嵌套最深的 working 子 agent 作为父级，以正确反映调用链。
         let parentId = mainAgentId;
         if (mainAgent && mainAgent.status !== "working") {
-          const deepestWorkingAgent = stmts.findDeepestWorkingAgent.get(sessionId, sessionId);
+          const deepestWorkingAgent = stmts.findDeepestWorkingAgent.get(sessionId);
           if (deepestWorkingAgent) {
             parentId = deepestWorkingAgent.id;
           }
@@ -376,7 +376,7 @@ const processEvent = db.transaction((hookType, data) => {
       // 把当前工具调用归因于该子 agent，而不是 main agent。
       const deepestWorkingAgent =
         mainAgent && mainAgent.status === "waiting"
-          ? stmts.findDeepestWorkingAgent.get(sessionId, sessionId)
+          ? stmts.findDeepestWorkingAgent.get(sessionId)
           : null;
       const subagentIsActor = !!deepestWorkingAgent;
       if (subagentIsActor && toolName !== "Agent") {
@@ -401,7 +401,7 @@ const processEvent = db.transaction((hookType, data) => {
       // 与 PreToolUse 对称：如果 main agent 在 waiting，但子 agent 真正执行了工具，
       // 则把 PostToolUse 事件归因于该子 agent。
       if (mainAgent && mainAgent.status === "waiting" && toolName !== "Agent") {
-        const deepestWorkingAgent = stmts.findDeepestWorkingAgent.get(sessionId, sessionId);
+        const deepestWorkingAgent = stmts.findDeepestWorkingAgent.get(sessionId);
         if (deepestWorkingAgent) {
           agentId = deepestWorkingAgent.id;
         }
@@ -420,7 +420,7 @@ const processEvent = db.transaction((hookType, data) => {
       clearAwaitingInput(sessionId, mainAgentId, true);
 
       if (mainAgent && mainAgent.status === "waiting" && toolName !== "Agent") {
-        const deepestWorkingAgent = stmts.findDeepestWorkingAgent.get(sessionId, sessionId);
+        const deepestWorkingAgent = stmts.findDeepestWorkingAgent.get(sessionId);
         if (deepestWorkingAgent) {
           agentId = deepestWorkingAgent.id;
         }

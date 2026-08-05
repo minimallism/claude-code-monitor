@@ -8,7 +8,6 @@ function bucketKey(model) {
 
 /**
  * 创建一个空的 token 分桶对象。
- * cacheWrite1h 用于单独统计 1h 缓存写入量（成本结构不同）。
  */
 function emptyBucket(model) {
   return {
@@ -17,7 +16,6 @@ function emptyBucket(model) {
     output: 0,
     cacheRead: 0,
     cacheWrite: 0,
-    cacheWrite1h: 0,
   };
 }
 
@@ -28,8 +26,6 @@ function emptyBucket(model) {
  * - 新版 usage 直接提供 cache_creation_input_tokens。
  * - 旧版 usage 可能只提供 cache_creation.ephemeral_5m_input_tokens /
  *   ephemeral_1h_input_tokens，需要把它们相加作为 cacheWrite。
- * - cacheWrite1h 是 cacheWrite 中属于 1h ephemeral 缓存的部分，
- *   用 Math.min 保证不超过总 cacheWrite。
  */
 function extractUsageFields(usage) {
   if (!usage || typeof usage !== "object") {
@@ -38,7 +34,6 @@ function extractUsageFields(usage) {
       output: 0,
       cacheRead: 0,
       cacheWrite: 0,
-      cacheWrite1h: 0,
     };
   }
   const cacheCreation =
@@ -52,13 +47,11 @@ function extractUsageFields(usage) {
       ? usage.cache_creation_input_tokens || 0
       : ephemeral5mTokens + ephemeral1hTokens;
 
-  const cacheWrite1h = Math.min(ephemeral1hTokens, cacheWrite);
   return {
     input: usage.input_tokens || 0,
     output: usage.output_tokens || 0,
     cacheRead: usage.cache_read_input_tokens || 0,
     cacheWrite,
-    cacheWrite1h,
   };
 }
 
@@ -70,7 +63,6 @@ function accumulateBucket(target, source) {
   target.output += source.output || 0;
   target.cacheRead += source.cacheRead || 0;
   target.cacheWrite += source.cacheWrite || 0;
-  target.cacheWrite1h += source.cacheWrite1h || 0;
   return target;
 }
 

@@ -153,7 +153,6 @@ class TranscriptCache {
     return {
       tokensByModel: {},
       turnDurations: [],
-      thinkingBlockCount: 0,
       // 最后一条 assistant 消息使用的模型。
       latestModel: null,
       // 用户自定义标题 / AI 生成标题。
@@ -242,14 +241,6 @@ class TranscriptCache {
       state.tokensByModel[key] = emptyBucket(model);
     }
     accumulateBucket(state.tokensByModel[key], extractUsageFields(message.usage));
-
-    // 统计 thinking 块数量。
-    const messageContent = message.content || [];
-    if (Array.isArray(messageContent)) {
-      for (const block of messageContent) {
-        if (block.type === "thinking") state.thinkingBlockCount++;
-      }
-    }
   }
 
   /**
@@ -262,7 +253,6 @@ class TranscriptCache {
     if (
       !hasTokens &&
       !hasTurnDurations &&
-      !state.thinkingBlockCount &&
       !state.latestModel &&
       !state.customTitle &&
       !state.aiTitle &&
@@ -278,7 +268,6 @@ class TranscriptCache {
     return {
       tokensByModel: hasTokens ? state.tokensByModel : null,
       turnDurations: hasTurnDurations ? state.turnDurations : null,
-      thinkingBlockCount: state.thinkingBlockCount,
       latestModel: state.latestModel,
       customTitle: state.customTitle,
       aiTitle: state.aiTitle,

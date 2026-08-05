@@ -204,26 +204,12 @@ const stmts = {
     "UPDATE agents SET awaiting_input_since = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE session_id = ? AND awaiting_input_since IS NOT NULL"
   ),
 
-  // 递归 CTE：从每个 session 的根 agent 出发，沿 parent_agent_id 找到嵌套最深的、
-  // 状态为 working 的子 agent。用于把工具调用事件正确归因到实际执行的子 agent。
-  findDeepestWorkingAgent: db.prepare(`
-    WITH RECURSIVE agent_depth AS (
-      SELECT id, parent_agent_id, 0 as depth
-      FROM agents
-      WHERE session_id = ? AND parent_agent_id IS NULL
-      UNION ALL
-      SELECT a.id, a.parent_agent_id, ad.depth + 1
-      FROM agents a
-      JOIN agent_depth ad ON a.parent_agent_id = ad.id
-      WHERE a.session_id = ?
-    )
-    SELECT ad.id, ad.depth
-    FROM agent_depth ad
-    JOIN agents a ON a.id = ad.id
-    WHERE a.status = 'working' AND a.type = 'subagent'
-    ORDER BY ad.depth DESC, a.started_at DESC
-    LIMIT 1
-  `),
+  // 查找当前 session 中状态为 working 的子 agent。
+  // CC 是单线程执行模型，任意时刻最多只有一个 working subagent，
+  // 取 started_at 最晚的即可。用于把工具调用事件归因到实际执行的子 agent。
+  findDeepestWorkingAgent: db.prepare(
+    "SELECT id FROM agents WHERE session_id = ? AND type = 'subagent' AND status = 'working' ORDER BY started_at DESC LIMIT 1"
+  ),
 
   touchSession: db.prepare(
     "UPDATE sessions SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?"
