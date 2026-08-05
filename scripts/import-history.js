@@ -250,7 +250,7 @@ async function parseSessionFile(filePath) {
  *
  * 结构与 parseSessionFile 类似，但关注的是子 agent 特有字段：
  * - task：第一条用户消息内容，作为子 agent 的任务描述。
- * - agentType：从同名的 .existingMetadata.json 中读取。
+ * - agentType：从同名的 .meta.json（CC 2.x+）或 .existingMetadata.json 中读取。
  * - spawnedChildAgentIds：子 agent 通过 Agent 工具创建的孙 agent id 集合，
  *   用于后续 reconcileSubagentParents 重建层级关系。
  */
@@ -265,6 +265,7 @@ async function parseSubagentFile(filePath) {
   let task = null;
   let model = null;
   let agentType = null;
+  let description = null;
   let firstTimestamp = null;
   let lastTimestamp = null;
   const tokensByModel = {};
@@ -371,11 +372,15 @@ async function parseSubagentFile(filePath) {
   if (!firstTimestamp) return null;
 
   // 读取 CC 生成的元数据文件，获取 agentType 等额外信息。
-  const metaPath = filePath.replace(/\.jsonl$/, ".existingMetadata.json");
+  // 先尝试 .meta.json（CC 2.x+），再回退 .existingMetadata.json（旧版）。
+  const metaPath = filePath.replace(/\.jsonl$/, ".meta.json");
+  const legacyMetaPath = filePath.replace(/\.jsonl$/, ".existingMetadata.json");
   try {
-    if (fs.existsSync(metaPath)) {
-      const existingMetadata = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+    const resolvedMeta = fs.existsSync(metaPath) ? metaPath : (fs.existsSync(legacyMetaPath) ? legacyMetaPath : null);
+    if (resolvedMeta) {
+      const existingMetadata = JSON.parse(fs.readFileSync(resolvedMeta, "utf8"));
       if (existingMetadata.agentType) agentType = existingMetadata.agentType;
+      if (existingMetadata.description) description = existingMetadata.description;
     }
   } catch {
     // 元数据文件不存在或损坏时忽略，agentType 保持 null。
@@ -384,6 +389,7 @@ async function parseSubagentFile(filePath) {
   return {
     agentId,
     agentType,
+    description,
     task,
     model,
     startedAt: firstTimestamp,
@@ -466,28 +472,61 @@ const SUBAGENT_LIVE_MATCH_TOLERANCE_MS = 30_000;
  * 如果两者时间接近，则认为是同一个 agent，避免重复记录。
  */
 function findLiveSubagentForJsonl(dbModule, sessionId, subagentData) {
-  if (!subagentData.agentType || !subagentData.startedAt) return null;
-  return dbModule.db
-    .prepare(
-      `SELECT id FROM agents
-       WHERE session_id = ?
-         AND type = 'subagent'
-         AND subagent_type = ?
-         AND id NOT LIKE ?
-         AND ABS(CAST(strftime('%s', started_at) AS INTEGER) -
-                 CAST(strftime('%s', ?) AS INTEGER)) <= ?
-       ORDER BY ABS(CAST(strftime('%s', started_at) AS INTEGER) -
-                    CAST(strftime('%s', ?) AS INTEGER)) ASC
-       LIMIT 1`
-    )
-    .get(
-      sessionId,
-      subagentData.agentType,
-      `${sessionId}-jsonl-%`,
-      subagentData.startedAt,
-      SUBAGENT_LIVE_MATCH_TOLERANCE_MS / 1000,
-      subagentData.startedAt
-    );
+  if (!subagentData.startedAt) return null;
+
+  // 优先按 agentType + startedAt（30 秒容差）匹配。
+  if (subagentData.agentType) {
+    const match = dbModule.db
+      .prepare(
+        `SELECT id FROM agents
+         WHERE session_id = ?
+           AND type = 'subagent'
+           AND subagent_type = ?
+           AND id NOT LIKE ?
+           AND ABS(CAST(strftime('%s', started_at) AS INTEGER) -
+                   CAST(strftime('%s', ?) AS INTEGER)) <= ?
+         ORDER BY ABS(CAST(strftime('%s', started_at) AS INTEGER) -
+                      CAST(strftime('%s', ?) AS INTEGER)) ASC
+         LIMIT 1`
+      )
+      .get(
+        sessionId,
+        subagentData.agentType,
+        `${sessionId}-jsonl-%`,
+        subagentData.startedAt,
+        SUBAGENT_LIVE_MATCH_TOLERANCE_MS / 1000,
+        subagentData.startedAt
+      );
+    if (match) return match;
+  }
+
+  // 回退：按 description 与数据库中的 name 前缀匹配。
+  // live hook 创建时 name 截断到 57 字符 + "..."，这里截断到相同长度再匹配。
+  if (subagentData.description) {
+    const descPrefix = subagentData.description.length > 57
+      ? subagentData.description.slice(0, 57)
+      : subagentData.description;
+    const match = dbModule.db
+      .prepare(
+        `SELECT id FROM agents
+         WHERE session_id = ?
+           AND type = 'subagent'
+           AND id NOT LIKE ?
+           AND name LIKE ?
+         ORDER BY ABS(CAST(strftime('%s', started_at) AS INTEGER) -
+                      CAST(strftime('%s', ?) AS INTEGER)) ASC
+         LIMIT 1`
+      )
+      .get(
+        sessionId,
+        `${sessionId}-jsonl-%`,
+        `${descPrefix}%`,
+        subagentData.startedAt
+      );
+    if (match) return match;
+  }
+
+  return null;
 }
 
 /**
