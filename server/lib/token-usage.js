@@ -1,6 +1,6 @@
 /**
  * 根据模型名生成唯一的分桶 key。
- * 直接用 model 名作为 key，不再区分 speed/geo/tier（数据库不存储这些维度）。
+ * 直接用 model 名作为 key。
  */
 function bucketKey(model) {
   return model || "unknown";

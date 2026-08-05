@@ -176,7 +176,7 @@ async function parseSessionFile(filePath) {
       const messageModel = message.model || null;
       if (!model && messageModel && messageModel !== "<synthetic>") model = messageModel;
 
-      // 累积 token 用量，按模型 + speed + geo + tier 分桶。
+      // 累积 token 用量，按模型分桶。
       if (messageModel && messageModel !== "<synthetic>" && message.usage) {
         const usage = message.usage;
         const key = bucketKey(messageModel);
@@ -532,7 +532,7 @@ function findLiveSubagentForJsonl(dbModule, sessionId, subagentData) {
 /**
  * 合并主会话和所有子 agent 的 token 用量桶。
  *
- * 同一模型/速度/地区/层级在不同 agent 间会产生独立的桶；
+ * 同一模型在不同 agent 间会产生独立的桶；
  * 合并后按 bucketKey 累加，得到会话级别的总用量。
  */
 function combineSessionTokens(session) {
@@ -541,7 +541,7 @@ function combineSessionTokens(session) {
     if (!src) return;
     for (const [key, tok] of Object.entries(src)) {
       if (!combined[key]) {
-        combined[key] = emptyBucket(tok.model, tok.speed, tok.geo, tok.tier);
+        combined[key] = emptyBucket(tok.model);
       }
       accumulateBucket(combined[key], tok);
     }
@@ -735,9 +735,7 @@ function resolveSubagentDbId(dbModule, sessionId, subagentData) {
  * 处理流程：
  * 1. 先构建 childId → parentId 的映射。
  * 2. 对每个孩子，解析出 childDbId 和 parentDbId。
- * 3. 在更新前做环检测：从 parent 开始沿现有 parent_agent_id 向上遍历，
- *    如果碰到 childDbId 说明会形成环，则跳过。
- * 4. 无环时更新 agents.parent_agent_id。
+ * 3. 无重复时更新 agents.parent_agent_id。
  */
 function reconcileSubagentParents(dbModule, sessionId, mainAgentId, parsedSubagents) {
   if (!Array.isArray(parsedSubagents) || parsedSubagents.length < 2) return 0;
@@ -773,20 +771,6 @@ function reconcileSubagentParents(dbModule, sessionId, mainAgentId, parsedSubage
     const parentRow = stmts.getAgent.get(parentDbId);
     if (!childRow || !parentRow) continue;
     if (childRow.parent_agent_id === parentDbId) continue;
-
-    // 环检测：从拟议的父节点向上遍历，如果路径中已包含孩子节点则放弃更新。
-    let cursor = parentDbId;
-    const seen = new Set([childDbId]);
-    let createsCycle = false;
-    while (cursor) {
-      if (seen.has(cursor)) {
-        createsCycle = true;
-        break;
-      }
-      seen.add(cursor);
-      cursor = stmts.getAgent.get(cursor)?.parent_agent_id || null;
-    }
-    if (createsCycle) continue;
 
     stmts.setAgentParent.run(parentDbId, childDbId);
     updated++;
