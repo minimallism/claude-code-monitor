@@ -13,7 +13,6 @@ Claude Code agent 活动实时监控面板。通过 Web UI 追踪会话、Agent�
 - **文件系统同步** — 监听 `~/.claude/projects/` 目录，自动同步新会话文件
 - **多语言 UI** — 支持英文和中文
 - **零数据库配置** — 使用 SQLite；支持 `better-sqlite3` 或 Node 22+ 内置 `node:sqlite`
-- **安全特性** — 可选 API Token 认证、Host 头校验、CORS 限制
 
 ## 快速开始
 
@@ -89,14 +88,6 @@ DASHBOARD_PORT=4820
 DASHBOARD_HOST=127.0.0.1
 DASHBOARD_TOKEN=your-secret-token
 ```
-
-## 安全
-
-默认情况下，服务只绑定 `127.0.0.1`（仅本地访问）。如果需要暴露到网络：
-
-- **设置 `DASHBOARD_TOKEN`** — 所有 API 请求（hooks 和 health 除外）需要通过 `Authorization: Bearer <token>`、`X-Dashboard-Token` 头或 `?token=` 查询参数提供 Token
-- **设置 `DASHBOARD_ALLOWED_HOSTS`** — 限制允许的 Host 头和 CORS 来源
-- **Token 比较使用 `crypto.timingSafeEqual`** — 防止时序攻击
 
 ## 开发
 
