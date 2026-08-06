@@ -11,6 +11,8 @@
 
 const { Router } = require("express");
 const { v4: uuidv4 } = require("uuid");
+const fs = require("fs");
+const path = require("path");
 const dbModule = require("../db");
 const { stmts, db } = dbModule;
 const { broadcast } = require("../sse");
@@ -40,6 +42,64 @@ function findMatchingSubagent(subagents, data) {
     (data.prompt && working.find((a) => a.task === data.prompt.slice(0, 500))) ||
     working[0]
   );
+}
+
+/**
+ * 在并行子 agent 场景下，通过反查子 agent 转录本 JSONL 中的 tool_use_id
+ * 精确匹配该工具调用归属于哪个子 agent。
+ *
+ * 磁盘上的 JSONL 文件名（agent-{ccUuid}.jsonl）与 DB 中的 agent ID 不一致，
+ * 因此需要通过 meta.json 的 description 字段匹配到 DB agent 的名称，
+ * 再读取对应 JSONL 文件内容搜索 tool_use_id。
+ *
+ * 有 tool_use_id 时始终走文件查找。搜不到时返回 null，由调用方决定是否覆盖 agentId。
+ */
+function findToolCallingSubagent(sessionId, toolUseId) {
+  const working = stmts
+    .listAgentsBySession.all(sessionId)
+    .filter((a) => a.type === "subagent" && a.status === "working");
+  if (working.length === 0) return null;
+  if (!toolUseId) return null;
+
+  const session = stmts.getSession.get(sessionId);
+  if (!session || !session.transcript_path) return null;
+
+  const subDir = path.join(path.dirname(session.transcript_path), sessionId, "subagents");
+
+  // 第一步：读取所有 meta.json，收集 {description, fileUuid} 列表
+  // （不用 Map，因为两个子 agent 的 description 截断后可能相同导致覆盖）
+  const metaEntries = [];
+  try {
+    const entries = fs.readdirSync(subDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.name.endsWith(".meta.json")) continue;
+      const meta = JSON.parse(fs.readFileSync(path.join(subDir, entry.name), "utf8"));
+      const desc = meta.description;
+      if (!desc) continue;
+      const fileUuid = entry.name.replace(".meta.json", "").replace("agent-", "");
+      metaEntries.push({ description: desc, fileUuid });
+    }
+  } catch {
+    return null;
+  }
+
+  // 第二步：把 meta 中的 description 匹配到 working 子 agent 的 name
+  for (const agent of working) {
+    const match = metaEntries.find((m) => m.description === agent.name);
+    if (!match) continue;
+
+    // 第三步：读取对应 JSONL 文件，搜索 tool_use_id
+    const jsonlPath = path.join(subDir, `agent-${match.fileUuid}.jsonl`);
+    try {
+      const content = fs.readFileSync(jsonlPath, "utf8");
+      if (content.includes(`"${toolUseId}"`)) return agent;
+    } catch {
+      // 文件可能尚不存在或已被删除，继续检查下一个 agent
+    }
+  }
+
+  // 所有 working 子 agent 的转录本都没有该 tool_use_id，说明不是子 agent 调用的
+  return null;
 }
 
 // 用于识别 Claude Code 推送的系统通知是否表示正在等待用户输入。
@@ -325,7 +385,26 @@ const processEvent = db.transaction((hookType, data) => {
       
       
       
+      
       clearAwaitingInput(sessionId, mainAgentId, true);
+
+      // 存在 working 子 agent 时，把当前工具调用归因于该子 agent，
+      // 而不是 main agent。并行场景下通过 tool_use_id 反查转录本精确匹配。
+      // 注意：此逻辑必须在 Agent 创建之前执行，否则刚创建的子 agent 会污染归因查询。
+      const toolCallingSubagent = findToolCallingSubagent(sessionId, toolUseId);
+      const subagentIsActor = !!toolCallingSubagent;
+      if (subagentIsActor) {
+        agentId = toolCallingSubagent.id;
+      }
+      // 如果确实没有子 agent 在执行，则把工具名更新到 main agent 的 current_tool。
+      if (
+        mainAgent &&
+        !subagentIsActor &&
+        (mainAgent.status === "working" || mainAgent.status === "waiting")
+      ) {
+        stmts.updateAgent.run(null, "working", null, toolName, null, null, mainAgentId);
+        broadcast("agent_updated", stmts.getAgent.get(mainAgentId));
+      }
 
       
       if (toolName === "Agent") {
@@ -366,31 +445,6 @@ const processEvent = db.transaction((hookType, data) => {
       }
 
       
-      
-      
-      
-      
-      
-      
-      // 当 main agent 处于 waiting 但存在正在工作的子 agent 时，
-      // 把当前工具调用归因于该子 agent，而不是 main agent。
-      const deepestWorkingAgent =
-        mainAgent && mainAgent.status === "waiting"
-          ? stmts.findDeepestWorkingAgent.get(sessionId)
-          : null;
-      const subagentIsActor = !!deepestWorkingAgent;
-      if (subagentIsActor && toolName !== "Agent") {
-        agentId = deepestWorkingAgent.id;
-      }
-      // 如果确实没有子 agent 在执行，则把工具名更新到 main agent 的 current_tool。
-      if (
-        mainAgent &&
-        !subagentIsActor &&
-        (mainAgent.status === "working" || mainAgent.status === "waiting")
-      ) {
-        stmts.updateAgent.run(null, "working", null, toolName, null, null, mainAgentId);
-        broadcast("agent_updated", stmts.getAgent.get(mainAgentId));
-      }
       break;
     }
 
@@ -398,13 +452,11 @@ const processEvent = db.transaction((hookType, data) => {
       // 工具执行成功，清除等待输入标记（用户批准通常是 PreToolUse 之前，但双重保险）。
       clearAwaitingInput(sessionId, mainAgentId, true);
 
-      // 与 PreToolUse 对称：如果 main agent 在 waiting，但子 agent 真正执行了工具，
+      // 与 PreToolUse 对称：如果存在 working 子 agent，
       // 则把 PostToolUse 事件归因于该子 agent。
-      if (mainAgent && mainAgent.status === "waiting" && toolName !== "Agent") {
-        const deepestWorkingAgent = stmts.findDeepestWorkingAgent.get(sessionId);
-        if (deepestWorkingAgent) {
-          agentId = deepestWorkingAgent.id;
-        }
+      const subagentAfterToolUse = findToolCallingSubagent(sessionId, toolUseId);
+      if (subagentAfterToolUse) {
+        agentId = subagentAfterToolUse.id;
       }
 
       // main agent 在 working 时工具结束，清除 current_tool。
@@ -419,11 +471,9 @@ const processEvent = db.transaction((hookType, data) => {
       // 工具执行失败，逻辑与 PostToolUse 基本一致，只是事件类型不同。
       clearAwaitingInput(sessionId, mainAgentId, true);
 
-      if (mainAgent && mainAgent.status === "waiting" && toolName !== "Agent") {
-        const deepestWorkingAgent = stmts.findDeepestWorkingAgent.get(sessionId);
-        if (deepestWorkingAgent) {
-          agentId = deepestWorkingAgent.id;
-        }
+      const subagentAfterFailedTool = findToolCallingSubagent(sessionId, toolUseId);
+      if (subagentAfterFailedTool) {
+        agentId = subagentAfterFailedTool.id;
       }
 
       if (mainAgent && mainAgent.status === "working") {
@@ -747,7 +797,7 @@ function watchdogCheck() {
       const mainAgentId = mainAgent?.id ?? null;
 
       // 如果转录本检测到 "[Request interrupted by user]" 且 main agent 仍在 working，
-      // 则把会话恢复为 waiting 状态，避免出现状态与实际不符。
+      // 则把会话恢复为 waiting 状态，同时清理被中断的子 agent。
       if (
         result.pendingInterrupt &&
         mainAgent &&
@@ -755,6 +805,37 @@ function watchdogCheck() {
         !mainAgent.awaiting_input_since
       ) {
         recoverInterruptedSession(staleSession.id, fullSession, mainAgentId);
+
+        // Ctrl+C 中断时，CC 不一定会对所有子 agent 发送 SubagentStop，
+        // 但会在子 agent 的 JSONL 中写入 [Request interrupted by user] 标记。
+        // 在此扫描所有 working 子 agent 的转录本，清理被中断的残留。
+        const orphanedSubs = db
+          .prepare("SELECT * FROM agents WHERE session_id = ? AND type = 'subagent' AND status = 'working'")
+          .all(staleSession.id);
+        if (orphanedSubs.length > 0) {
+          const subDir = path.join(path.dirname(transcriptPath), staleSession.id, "subagents");
+          try {
+            const entries = fs.readdirSync(subDir, { withFileTypes: true });
+            for (const entry of entries) {
+              if (!entry.name.endsWith(".meta.json")) continue;
+              const meta = JSON.parse(fs.readFileSync(path.join(subDir, entry.name), "utf8"));
+              if (!meta.description) continue;
+              const agent = orphanedSubs.find((a) => a.name === meta.description);
+              if (!agent) continue;
+              const jsonlFile = entry.name.replace(".meta.json", ".jsonl");
+              const content = fs.readFileSync(path.join(subDir, jsonlFile), "utf8");
+              if (/\[Request interrupted by user/i.test(content)) {
+                stmts.updateAgent.run(
+                  null, "completed", null, null, new Date().toISOString(), null, agent.id
+                );
+                broadcast("agent_updated", stmts.getAgent.get(agent.id));
+              }
+            }
+          } catch {
+            // 子 agent 目录不存在或不可读，跳过清理
+          }
+        }
+
         continue;
       }
 
