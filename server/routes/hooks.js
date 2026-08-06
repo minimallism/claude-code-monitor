@@ -48,9 +48,12 @@ function findMatchingSubagent(subagents, data) {
  * 在并行子 agent 场景下，通过反查子 agent 转录本 JSONL 中的 tool_use_id
  * 精确匹配该工具调用归属于哪个子 agent。
  *
- * 磁盘上的 JSONL 文件名（agent-{ccUuid}.jsonl）与 DB 中的 agent ID 不一致，
- * 因此需要通过 meta.json 的 description 字段匹配到 DB agent 的名称，
- * 再读取对应 JSONL 文件内容搜索 tool_use_id。
+ * 遍历方向：先遍历所有 JSONL 文件搜索 tool_use_id，找到后再用 meta.json
+ * 的 description 反查 DB 中的 working 子 agent。这样即使两个子 agent 的
+ * description 相同，也不会遗漏搜索任何一个 JSONL。
+ *
+ * DB agent.name 可能被截断到 60 字符（57 + "..."），
+ * 匹配时去掉尾部 "..." 后用 startsWith 兼容截断。
  *
  * 有 tool_use_id 时始终走文件查找。搜不到时返回 null，由调用方决定是否覆盖 agentId。
  */
@@ -66,8 +69,7 @@ function findToolCallingSubagent(sessionId, toolUseId) {
 
   const subDir = path.join(path.dirname(session.transcript_path), sessionId, "subagents");
 
-  // 第一步：读取所有 meta.json，收集 {description, fileUuid} 列表
-  // （不用 Map，因为两个子 agent 的 description 截断后可能相同导致覆盖）
+  // 读取所有 meta.json，收集 {description, fileUuid} 列表
   const metaEntries = [];
   try {
     const entries = fs.readdirSync(subDir, { withFileTypes: true });
@@ -83,22 +85,28 @@ function findToolCallingSubagent(sessionId, toolUseId) {
     return null;
   }
 
-  // 第二步：把 meta 中的 description 匹配到 working 子 agent 的 name
-  for (const agent of working) {
-    const match = metaEntries.find((m) => m.description === agent.name);
-    if (!match) continue;
-
-    // 第三步：读取对应 JSONL 文件，搜索 tool_use_id
-    const jsonlPath = path.join(subDir, `agent-${match.fileUuid}.jsonl`);
+  // 遍历每个 JSONL 文件搜索 tool_use_id，
+  // 避免先匹配 description 导致碰撞时跳过正确的 JSONL
+  for (const metaEntry of metaEntries) {
+    const jsonlPath = path.join(subDir, `agent-${metaEntry.fileUuid}.jsonl`);
     try {
       const content = fs.readFileSync(jsonlPath, "utf8");
-      if (content.includes(`"${toolUseId}"`)) return agent;
+      if (!content.includes(`"${toolUseId}"`)) continue;
+
+      // 找到了 tool_use_id，用 meta description 反查 DB agent。
+      // 去掉 agent.name 尾部 "..." 后用 startsWith 匹配完整的 description，
+      // 兼容 name 被截断到 60 字符（57 + "..."）的情况。
+      const agent = working.find((a) => {
+        const nameCore = a.name.endsWith("...") ? a.name.slice(0, -3) : a.name;
+        return metaEntry.description.startsWith(nameCore);
+      });
+      if (agent) return agent;
     } catch {
-      // 文件可能尚不存在或已被删除，继续检查下一个 agent
+      // 文件可能尚不存在或已被删除，继续检查下一个
     }
   }
 
-  // 所有 working 子 agent 的转录本都没有该 tool_use_id，说明不是子 agent 调用的
+  // 所有 JSONL 都没有该 tool_use_id，说明不是子 agent 调用的
   return null;
 }
 
