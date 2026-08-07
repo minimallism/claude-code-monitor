@@ -165,6 +165,9 @@ function recoverInterruptedSession(sessionId, fullSession, mainAgentId) {
  * 同时尝试写入 transcript_path（仅当字段为空时写入，避免覆盖）。
  */
 function ensureSession(sessionId, data) {
+  // const stringifyData = JSON.stringify(data);
+  // console.log('stringifyData-----------', stringifyData);
+  // console.log(`[HOOKS] ensureSession ${sessionId} ${data.session_name}`);
   let session = stmts.getSession.get(sessionId);
   if (!session) {
     stmts.insertSession.run(
@@ -185,6 +188,7 @@ function ensureSession(sessionId, data) {
     // 每个 session 固定有一个 main agent，id 规则为 "{sessionId}-main"，方便快速查找。
     const mainAgentId = `${sessionId}-main`;
     const sessionLabel = session.name || `Session ${sessionId.slice(0, 8)}`;
+    console.log('sessionLabel', sessionLabel);
     stmts.insertAgent.run(
       mainAgentId,
       sessionId,
@@ -323,9 +327,6 @@ const processEvent = db.transaction((hookType, data) => {
 
   
   
-  
-  
-  
   if (data.remote_custom_title || data.remote_ai_title) {
     syncSessionName(session, {
       customTitle:
@@ -417,8 +418,8 @@ const processEvent = db.transaction((hookType, data) => {
       
       if (toolName === "Agent") {
         const toolInput = data.tool_input || {};
+        console.log('toolInput', toolInput);
         const subagentId = uuidv4();
-
         // 子 agent 名称优先级：description > subagent_type > prompt 首行 > 默认 "Subagent"。
         const rawSubagentName =
           toolInput.description ||
@@ -866,6 +867,39 @@ function watchdogCheck() {
         const idleMs = Date.now() - Math.max(mtimeMs, hookMs);
         if (idleMs > WORKING_IDLE_MS) {
           recoverInterruptedSession(staleSession.id, fullSession, mainAgentId);
+        }
+      }
+
+      // 独立清理被中断的子 agent：Ctrl+C 后主 agent 可能已通过 Stop hook
+      // 恢复为 waiting 并设置了 awaiting_input_since，但子 agent 未收到
+      // SubagentStop，仍卡在 working。扫描子 agent 转录本中的中断标记，
+      // 立即将其标记为 completed，不依赖主 agent 状态。
+      {
+        const orphanedSubs = db
+          .prepare("SELECT * FROM agents WHERE session_id = ? AND type = 'subagent' AND status = 'working'")
+          .all(staleSession.id);
+        if (orphanedSubs.length > 0 && transcriptPath) {
+          const subDir = path.join(path.dirname(transcriptPath), staleSession.id, "subagents");
+          try {
+            const entries = fs.readdirSync(subDir, { withFileTypes: true });
+            for (const entry of entries) {
+              if (!entry.name.endsWith(".meta.json")) continue;
+              const meta = JSON.parse(fs.readFileSync(path.join(subDir, entry.name), "utf8"));
+              if (!meta.description) continue;
+              const agent = orphanedSubs.find((a) => a.name === meta.description);
+              if (!agent) continue;
+              const jsonlFile = entry.name.replace(".meta.json", ".jsonl");
+              const content = fs.readFileSync(path.join(subDir, jsonlFile), "utf8");
+              if (/\[Request interrupted by user/i.test(content)) {
+                stmts.updateAgent.run(
+                  null, "completed", null, null, new Date().toISOString(), null, agent.id
+                );
+                broadcast("agent_updated", stmts.getAgent.get(agent.id));
+              }
+            }
+          } catch {
+            // 子 agent 目录不存在或不可读
+          }
         }
       }
       continue;
