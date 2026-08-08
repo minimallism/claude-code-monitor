@@ -1,6 +1,6 @@
 {
   "name": "@minimallism/claude-code-monitor",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Real-time monitor for Claude Code agent activity",
   "type": "commonjs",
   "main": "server/index.js",
